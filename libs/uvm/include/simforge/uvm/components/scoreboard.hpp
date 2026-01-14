@@ -1,8 +1,6 @@
 #pragma once
 
 #include <simforge/uvm/components/component.hpp>
-#include <simforge/uvm/components/subscriber.hpp>
-#include <simforge/uvm/transaction.hpp>
 
 #include <vector>
 #include <stdexcept>
@@ -16,32 +14,26 @@ namespace simforge::uvm::components
         {
         }
 
-        void writeIn(std::shared_ptr<InputData> inData)
+        virtual void build_phase() override {}
+        virtual void connect_phase() override {}
+        virtual void run_phase(uint64_t sim_time) override {}
+
+        virtual void report_phase() override {}
+
+        virtual void on_reset() override {}
+
+    protected:
+        template <typename I, typename O>
+        void displayValueMismatch(const I &data_in, const O &expected_out, const O &actual_out, uint64_t sim_time)
         {
-            log_->debug("writeIn: push input transaction");
-            in_q.push(std::move(inData));
+            log_->info(R"(
+                {} Subscriber: value mismatch
+                    Input: {}
+                    Expected Output: {}
+                    Actual Output: {}
+                    Simtime: {}
+                )",
+                       name(), data_in, expected_out, actual_out, sim_time);
         }
-
-        void writeOut(std::shared_ptr<OutputData> outData);
-
-        void build_phase() override {}
-        void connect_phase() override {}
-        void run_phase() override {}
-
-        void report() override
-        {
-            log_->info("###### Scoreboard Report ######");
-            for (auto *sub : subscribers)
-            {
-                log_->info("Subscriber '{}' report:", sub->name());
-                sub->report();
-            }
-            log_->info("###### End Scoreboard Report ######");
-        }
-
-        std::vector<Subscriber *> subscribers;
-
-    private:
-        TLMQueue<InputData> in_q;
     };
 }
