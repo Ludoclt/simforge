@@ -3,25 +3,36 @@
 #include <simforge/uvm/components/component.hpp>
 #include <simforge/uvm/components/scoreboard.hpp>
 #include <simforge/uvm/transaction.hpp>
+#include <simforge/uvm/tlm/tlm_analysis_port.hpp>
 
 #include <stdexcept>
 
 namespace simforge::uvm::components::agent
 {
-    class Monitor : public Component
+    class IMonitor : public Component
     {
     public:
+        using Component::Component;
+        virtual ~IMonitor() = default;
+    };
+
+    template <typename T = Transaction>
+    class Monitor : public IMonitor
+    {
+    public:
+        using Tx = std::shared_ptr<T>;
+
         explicit Monitor(Component *parent, std::string name = "MON")
-            : Component(name, parent)
+            : IMonitor(name, parent)
         {
         }
 
-        virtual ~Monitor() = default;
+        virtual void build_phase() {}
 
-        void run_phase() override
+        void run_phase(uint64_t sim_time) final override
         {
-            if (!scb)
-                throw std::runtime_error("PANIC: The monitor is not connected to a Scoreboard!");
+            if (!should_sample())
+                return;
 
             log_->debug("Sampling DUT signals...");
             auto data = sample();
@@ -32,33 +43,24 @@ namespace simforge::uvm::components::agent
                 return;
             }
 
-            if (data->isInput())
-            {
-                auto in = std::dynamic_pointer_cast<InputData>(data);
-                if (!in)
-                {
-                    log_->error("Monitor returned a transaction marked as input but cast failed!");
-                    throw std::runtime_error("Bad transaction type");
-                }
-                scb->writeIn(in);
-            }
-            else
-            {
-                auto out = std::dynamic_pointer_cast<OutputData>(data);
-                if (!out)
-                {
-                    log_->error("Monitor returned a transaction marked as output but cast failed!");
-                    throw std::runtime_error("Bad transaction type");
-                }
-                scb->writeOut(out);
-            }
+            analysis_port.write(data);
+            log_->info("Transaction sent to subscribers");
+        }
 
-            log_->debug("Transaction sent to Scoreboard.");
+        virtual void report_phase() override {}
+
+        virtual void on_reset() override {}
+
+        void connect(tlm::ITLMAnalysisIf<Tx> *iface)
+        {
+            analysis_port.connect(iface);
         }
 
     protected:
-        Scoreboard *scb = nullptr;
+        virtual bool should_sample() const = 0;
 
-        virtual std::shared_ptr<Transaction> sample() = 0;
+        virtual Tx sample() = 0;
+
+        tlm::TLMAnalysisPort<Tx> analysis_port;
     };
 }

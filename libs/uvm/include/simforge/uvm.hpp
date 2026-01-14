@@ -3,10 +3,17 @@
 #include <simforge/uvm/transaction.hpp>
 #include <simforge/uvm/signals/signals.hpp>
 
+#include <simforge/uvm/tlm/tlm_port.hpp>
+#include <simforge/uvm/tlm/tlm_export.hpp>
+#include <simforge/uvm/tlm/tlm_fifo.hpp>
+#include <simforge/uvm/tlm/tlm_analysis_port.hpp>
+#include <simforge/uvm/tlm/tlm_analysis_export.hpp>
+
 #include <simforge/uvm/components/component.hpp>
 
 #include <simforge/uvm/components/subscriber.hpp>
 #include <simforge/uvm/components/scoreboard.hpp>
+#include <simforge/uvm/components/coverage.hpp>
 
 #include <simforge/uvm/components/agent/driver.hpp>
 #include <simforge/uvm/components/agent/sequencer.hpp>

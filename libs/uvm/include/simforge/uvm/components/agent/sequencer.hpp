@@ -2,7 +2,8 @@
 
 #include <simforge/uvm/components/component.hpp>
 #include <simforge/uvm/transaction.hpp>
-#include "driver.hpp"
+#include <simforge/uvm/tlm/tlm_fifo.hpp>
+#include <simforge/uvm/tlm/tlm_export.hpp>
 
 #include <random>
 
@@ -16,15 +17,14 @@ namespace simforge::uvm::components::agent
 
         virtual ~Sequencer() = default;
 
-        void next(Driver &driver);
+        virtual void connect_phase() override {}
+        virtual void run_phase(uint64_t sim_time) override {}
+        virtual void report_phase() override {}
 
-        bool empty_sequence()
-        {
-            return sequence.empty();
-        }
+        tlm::TLMExport<InputData> seq_export{&sequence, &sequence};
 
     protected:
-        TLMQueue<InputData> sequence;
+        tlm::TLMFifo<InputData> sequence;
 
         uint32_t random_stimuli_range(uint32_t start, uint16_t end)
         {
