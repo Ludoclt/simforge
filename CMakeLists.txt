@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 project(sim_forge LANGUAGES CXX)
 
 include(cmake/simforge_options.cmake)
+include(cmake/simforge_dependencies.cmake)
 
 add_subdirectory(libs/uvm)
 add_subdirectory(backends)

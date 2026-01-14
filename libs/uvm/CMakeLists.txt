@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.22)
 
 add_library(simforge_uvm)
 
+add_library(simforge::uvm
+    ALIAS simforge_uvm
+)
+
 file(GLOB_RECURSE UVM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
@@ -17,6 +21,7 @@ target_include_directories(simforge_uvm
 target_link_libraries(simforge_uvm
     PUBLIC
         spdlog::spdlog
+        magic_enum
 )
 
 target_compile_features(simforge_uvm PUBLIC cxx_std_20)
