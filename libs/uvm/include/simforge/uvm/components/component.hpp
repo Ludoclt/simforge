@@ -1,5 +1,7 @@
 #pragma once
 
+#include <simforge/uvm/signals/signals.hpp>
+
 #include <string>
 #include <memory>
 #include <spdlog/spdlog.h>
@@ -19,12 +21,14 @@ namespace simforge::uvm::components
 
         virtual ~Component() = default;
 
+        const std::string &name() const { return name_; }
+
         virtual void build_phase() = 0;
         virtual void connect_phase() = 0;
-        virtual void run_phase() = 0;
-        virtual void report() = 0;
+        virtual void run_phase(uint64_t sim_time) = 0;
+        virtual void report_phase() = 0;
 
-        const std::string &name() const { return name_; }
+        virtual void on_reset() = 0;
 
         Component *parent_ = nullptr;
 
@@ -33,5 +37,11 @@ namespace simforge::uvm::components
         std::shared_ptr<spdlog::logger> log_;
 
         class Env &env();
+
+        virtual signals::ClockSignal &clk() const;
+        virtual signals::ResetSignal &rst() const;
+
+        virtual void raise_objection();
+        virtual void drop_objection();
     };
 }

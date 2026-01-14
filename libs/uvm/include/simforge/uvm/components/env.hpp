@@ -4,6 +4,7 @@
 #include <simforge/uvm/signals/signals.hpp>
 #include <simforge/uvm/components/agent/agent.hpp>
 #include <simforge/uvm/components/scoreboard.hpp>
+#include <simforge/uvm/components/coverage.hpp>
 #include <simforge/uvm/backend.hpp>
 
 #include <memory>
@@ -15,11 +16,12 @@ namespace simforge::uvm::components
     public:
         Env(Backend &backend,
             std::string name = "TB",
-            int trace_level = 3)
+            int trace_level = 3,
+            int reset_cycles = 3)
             : Component(name, nullptr),
               backend(backend),
               trace_level(trace_level),
-              scb(Scoreboard(this))
+              reset_cycles(reset_cycles)
         {
         }
 
@@ -33,25 +35,35 @@ namespace simforge::uvm::components
             if (auto *comp = dynamic_cast<agent::Agent *>(ptr.get()))
                 agents.push_back(comp);
 
+            if (auto *comp = dynamic_cast<Scoreboard *>(ptr.get()))
+                scb = comp;
+
+            if (auto *comp = dynamic_cast<Coverage *>(ptr.get()))
+                cov = comp;
+
             components.push_back(std::move(ptr));
             return ref;
         }
 
         void build_phase() override
         {
-            spdlog::set_level(spdlog::level::debug);
-            spdlog::set_pattern("[%^[%n]%$] %v");
-
             log_->info("Setup start");
-
-            backend.setup();
 
             backend.start_trace(trace_level);
 
             log_->info("Trace opened (level {})", trace_level);
 
+            if (!scb)
+                throw std::runtime_error("No Scoreboard instance in " + name_);
+
+            if (!cov)
+                throw std::runtime_error("No Coverage instance in " + name_);
+
             for (auto *agent : agents)
                 agent->build_phase();
+
+            scb->build_phase();
+            cov->build_phase();
 
             log_->info("Build phase completed");
         }
@@ -63,71 +75,71 @@ namespace simforge::uvm::components
             for (auto *agent : agents)
                 agent->connect_phase();
 
+            scb->connect_phase();
+            cov->connect_phase();
+
             log_->info("Connect phase completed");
         }
 
-        void run_phase() override
+        void run_phase(uint64_t sim_time) override
         {
-            log_->info("Simulation started");
-
-            for (int i = 0; i < agents.size(); i++)
+            if (reset_cycles > 0)
             {
-                log_->info("Agent number {}", i);
+                raise_objection();
 
-                auto *agent = agents.at(i);
+                log_->info("Applying reset at time {} (active_{})",
+                           sim_time, backend.rst().polarity() ? "high" : "low");
 
-                if (agent->reset_cycles > 0)
-                    pulseReset(agent->reset_cycles);
+                backend.rst().assert_reset();
 
-                while (!agent->finished())
-                {
-                    // Tick clock and evaluate DUT
-                    backend.clk().toggle();
-                    backend.eval();
+                reset_cycles--;
+            }
+            else
+            {
+                if (backend.rst().is_asserted())
+                    log_->info("Reset released at t={}", sim_time);
 
-                    // Sequence driving phase
-                    if (!backend.rst().is_asserted() && backend.clk().level() == agent->verif_edge)
-                        agent->run_phase();
+                backend.rst().release();
 
-                    backend.dump_trace();
-                    backend.incr_time();
-                }
+                drop_objection();
             }
 
-            backend.stop_trace();
-            log_->info("Trace closed. Simulation finished at t={}", sim_time());
-
-            scb.report();
+            if (backend.rst().is_asserted())
+                notify_reset();
         }
 
-        uint64_t sim_time() const { return backend.time(); }
+        void report_phase() override
+        {
+            for (auto *agent : agents)
+                agent->report_phase();
+
+            scb->report_phase();
+            cov->report_phase();
+        }
+
+        void notify_reset()
+        {
+            for (auto &comp : components)
+                comp->on_reset();
+        }
 
         int trace_level;
+
+        uint32_t reset_cycles;
 
         Backend &backend;
 
         std::vector<std::unique_ptr<Component>> components;
         std::vector<agent::Agent *> agents;
 
-        Scoreboard scb;
+        template <typename S = Scoreboard>
+        S &get_scb() { return *dynamic_cast<S *>(scb); }
 
-        void pulseReset(uint32_t cycles)
-        {
-            log_->info("Applying reset for {} cycles (active_{})",
-                       cycles, backend.rst().polarity() ? "high" : "low");
-            backend.rst().assert_reset();
-            for (uint32_t i = 0; i < cycles; ++i)
-            {
-                backend.clk().toggle();
-                backend.eval();
-                backend.dump_trace();
-                backend.incr_time();
-            }
-            backend.rst().release();
-            backend.eval();
-            backend.dump_trace();
-            backend.incr_time();
-            log_->info("Reset released at t={}", sim_time());
-        }
+        template <typename C = Coverage>
+        C &get_cov() { return *dynamic_cast<C *>(cov); }
+
+    private:
+        Scoreboard *scb;
+        Coverage *cov;
     };
 }
