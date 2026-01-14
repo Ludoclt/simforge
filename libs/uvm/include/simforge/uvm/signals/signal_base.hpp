@@ -20,6 +20,9 @@ namespace simforge::uvm::signals
         virtual void set(uint8_t val) { *sig = val; }
         virtual uint8_t get() const { return *sig; }
 
+        virtual bool posedge() { return *sig == 1; }
+        virtual bool negedge() { return *sig == 0; }
+
     protected:
         uint8_t *sig;
     };

@@ -23,4 +23,22 @@ namespace simforge::uvm::signals
         uint64_t period;
         uint64_t half_period;
     };
+
+    struct ClockDesc
+    {
+        uint8_t *sig;
+
+        uint64_t period = 2;
+
+        ClockDesc &with_period(uint64_t p)
+        {
+            period = p;
+            return *this;
+        }
+    };
+
+    inline ClockDesc clock(uint8_t *sig_ptr)
+    {
+        return {.sig = sig_ptr};
+    }
 } // namespace simforge::uvm::signals

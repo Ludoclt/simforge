@@ -7,6 +7,7 @@
 #include <verilated_vcd_c.h>
 
 #include <memory>
+#include <filesystem>
 
 namespace simforge::backend::verilator
 {
@@ -43,7 +44,10 @@ namespace simforge::backend::verilator
         void start_trace(int level) override
         {
             dut->trace(trace.get(), level);
-            trace->open("waveform.vcd");
+
+            const std::string path = std::filesystem::canonical("/proc/self/exe").string() + "/waveform.vcd";
+
+            trace->open(path.c_str());
         }
 
         void stop_trace() override
@@ -62,7 +66,27 @@ namespace simforge::backend::verilator
             dut = std::make_unique<DUT>(std::forward<Args>(args)...);
         }
 
-        DUT &get_dut() const noexcept { return dut; }
+        void bind_signal(const simforge::uvm::signals::ClockDesc &desc)
+        {
+            if (!dut)
+                throw std::logic_error("bind_signal: DUT not created");
+
+            _clk = std::make_unique<simforge::uvm::signals::ClockSignal>(
+                desc.sig,
+                desc.period);
+        }
+
+        void bind_signal(const simforge::uvm::signals::ResetDesc &desc)
+        {
+            if (!dut)
+                throw std::logic_error("bind_signal: DUT not created");
+
+            _rst = std::make_unique<simforge::uvm::signals::ResetSignal>(
+                desc.sig,
+                desc.active_lvl);
+        }
+
+        DUT &get_dut() const noexcept { return *dut; }
 
     private:
         std::unique_ptr<DUT> dut;

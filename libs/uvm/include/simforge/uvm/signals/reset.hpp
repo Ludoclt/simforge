@@ -21,4 +21,28 @@ namespace simforge::uvm::signals
     private:
         bool active_high;
     };
+
+    struct ResetDesc
+    {
+        uint8_t *sig;
+
+        bool active_lvl = true;
+
+        ResetDesc &active_high()
+        {
+            active_lvl = true;
+            return *this;
+        }
+
+        ResetDesc &active_low()
+        {
+            active_lvl = false;
+            return *this;
+        }
+    };
+
+    inline ResetDesc reset(uint8_t *sig_ptr)
+    {
+        return {.sig = sig_ptr};
+    }
 } // namespace simforge::uvm::signals
