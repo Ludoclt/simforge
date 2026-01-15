@@ -45,7 +45,7 @@ namespace simforge::backend::verilator
         {
             dut->trace(trace.get(), level);
 
-            const std::string path = std::filesystem::canonical("/proc/self/exe").string() + "/waveform.vcd";
+            const std::string path = std::filesystem::canonical("/proc/self/exe").parent_path().string() + "/waveform.vcd";
 
             trace->open(path.c_str());
         }
