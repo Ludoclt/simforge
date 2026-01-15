@@ -34,7 +34,6 @@ namespace simforge::uvm::components
 
     protected:
         std::string name_;
-        std::shared_ptr<spdlog::logger> log_;
 
         class Env &env();
 
@@ -43,5 +42,10 @@ namespace simforge::uvm::components
 
         virtual void raise_objection();
         virtual void drop_objection();
+
+        const std::shared_ptr<spdlog::logger> &logger() const { return log_; }
+
+    private:
+        std::shared_ptr<spdlog::logger> log_;
     };
 }

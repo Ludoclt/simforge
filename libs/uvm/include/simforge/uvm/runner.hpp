@@ -16,12 +16,15 @@ namespace simforge::uvm
     {
     public:
         template <typename... Args>
-        explicit Runner(Args &&...args)
+        explicit Runner(spdlog::level::level_enum log_level, Args &&...args)
             : backend_(std::make_unique<B>()), env_(std::make_unique<E>(*backend_, std::forward<Args>(args)...))
         {
             if (tls_current)
                 throw std::runtime_error("Runner already exists in this thread");
             tls_current = this;
+
+            spdlog::set_level(log_level);
+            spdlog::set_pattern("[%^[%n]%$] %v");
 
             const std::string name = "RUNNER";
             log_ = spdlog::get(name);
@@ -41,9 +44,6 @@ namespace simforge::uvm
                 throw std::runtime_error("Runner::run() called twice");
 
             has_run_ = true;
-
-            spdlog::set_level(spdlog::level::debug);
-            spdlog::set_pattern("[%^[%n]%$] %v");
 
             backend_->setup();
 

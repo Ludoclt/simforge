@@ -18,7 +18,7 @@ namespace simforge::uvm::components
 
         using CoverageMap = std::map<std::string, CoverageBin>;
 
-        explicit Coverage(Component *parent, float goal = 95.0, std::string name = "COV") : Component(name, parent)
+        explicit Coverage(Component *parent, float goal = 95.0, std::string name = "COV") : Component(name, parent), _goal(goal)
         {
         }
 
@@ -27,10 +27,10 @@ namespace simforge::uvm::components
 
         void report_phase() override
         {
-            log_->info("");
-            log_->info("========================================");
-            log_->info("         {} FUNCTIONAL COVERAGE         ", name_);
-            log_->info("========================================");
+            logger()->info("");
+            logger()->info("========================================");
+            logger()->info("         {} FUNCTIONAL COVERAGE         ", name_);
+            logger()->info("========================================");
 
             uint64_t covered = 0;
             uint64_t total = coverage_bins.size();
@@ -39,7 +39,7 @@ namespace simforge::uvm::components
             {
                 if (bin.hits == 0)
                 {
-                    log_->warn("UNCOVERED: {}", name);
+                    logger()->warn("UNCOVERED: {}", name);
                     continue;
                 }
 
@@ -49,7 +49,7 @@ namespace simforge::uvm::components
                 if (done)
                     covered++;
 
-                log_->info(
+                logger()->info(
                     "{:<35} {} {:6.2f}%",
                     name,
                     progress_bar(pct / 100.0),
@@ -58,14 +58,14 @@ namespace simforge::uvm::components
 
             double global = total ? (100.0 * covered / total) : 100.0;
 
-            log_->info("----------------------------------------");
-            log_->info(
+            logger()->info("----------------------------------------");
+            logger()->info(
                 "TOTAL COVERAGE: {}/{} bins ({:.2f}%)",
                 covered,
                 total,
                 global);
 
-            log_->info("========================================");
+            logger()->info("========================================");
 
             if (global < _goal)
                 throw std::runtime_error("Coverage goal not met");

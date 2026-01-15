@@ -47,11 +47,11 @@ namespace simforge::uvm::components
 
         void build_phase() override
         {
-            log_->info("Setup start");
+            logger()->debug("Setup start");
 
             backend.start_trace(trace_level);
 
-            log_->info("Trace opened (level {})", trace_level);
+            logger()->info("Trace opened (level {})", trace_level);
 
             if (!scb)
                 throw std::runtime_error("No Scoreboard instance in " + name_);
@@ -65,12 +65,12 @@ namespace simforge::uvm::components
             scb->build_phase();
             cov->build_phase();
 
-            log_->info("Build phase completed");
+            logger()->debug("Build phase completed");
         }
 
         void connect_phase() override
         {
-            log_->info("Connect phase");
+            logger()->debug("Connect phase");
 
             for (auto *agent : agents)
                 agent->connect_phase();
@@ -78,7 +78,7 @@ namespace simforge::uvm::components
             scb->connect_phase();
             cov->connect_phase();
 
-            log_->info("Connect phase completed");
+            logger()->debug("Connect phase completed");
         }
 
         void run_phase(uint64_t sim_time) override
@@ -87,8 +87,8 @@ namespace simforge::uvm::components
             {
                 raise_objection();
 
-                log_->info("Applying reset at time {} (active_{})",
-                           sim_time, backend.rst().polarity() ? "high" : "low");
+                logger()->info("Applying reset at time {} (active_{})",
+                               sim_time, backend.rst().polarity() ? "high" : "low");
 
                 backend.rst().assert_reset();
 
@@ -97,7 +97,7 @@ namespace simforge::uvm::components
             else
             {
                 if (backend.rst().is_asserted())
-                    log_->info("Reset released at t={}", sim_time);
+                    logger()->info("Reset released at t={}", sim_time);
 
                 backend.rst().release();
 

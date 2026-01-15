@@ -26,14 +26,14 @@ namespace simforge::uvm::components
         template <typename I, typename O>
         void displayValueMismatch(const I &data_in, const O &expected_out, const O &actual_out, uint64_t sim_time)
         {
-            log_->info(R"(
+            logger()->info(R"(
                 {} Subscriber: value mismatch
                     Input: {}
                     Expected Output: {}
                     Actual Output: {}
                     Simtime: {}
                 )",
-                       name(), data_in, expected_out, actual_out, sim_time);
+                           name(), data_in, expected_out, actual_out, sim_time);
         }
     };
 }

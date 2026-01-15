@@ -27,24 +27,24 @@ namespace simforge::uvm::components::agent
         {
         }
 
-        virtual void build_phase() {}
+        virtual void build_phase() override {}
 
         void run_phase(uint64_t sim_time) final override
         {
             if (!should_sample())
                 return;
 
-            log_->debug("Sampling DUT signals...");
+            logger()->debug("Sampling DUT signals...");
             auto data = sample();
 
             if (data == nullptr)
             {
-                log_->debug("Null data sampled");
+                logger()->debug("Null data sampled");
                 return;
             }
 
             analysis_port.write(data);
-            log_->info("Transaction sent to subscribers");
+            logger()->debug("Transaction sent to subscribers");
         }
 
         virtual void report_phase() override {}
