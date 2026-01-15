@@ -4,6 +4,7 @@
 #include <simforge/uvm/components/scoreboard.hpp>
 #include <simforge/uvm/transaction.hpp>
 #include <simforge/uvm/tlm/tlm_analysis_port.hpp>
+#include <simforge/uvm/signals/vif.hpp>
 
 #include <stdexcept>
 
@@ -14,9 +15,11 @@ namespace simforge::uvm::components::agent
     public:
         using Component::Component;
         virtual ~IMonitor() = default;
+
+        virtual void set_vif(signals::Vif *vif) = 0;
     };
 
-    template <typename T = Transaction>
+    template <typename T = Transaction, typename VIF = signals::Vif>
     class Monitor : public IMonitor
     {
     public:
@@ -56,11 +59,20 @@ namespace simforge::uvm::components::agent
             analysis_port.connect(iface);
         }
 
+        void set_vif(signals::Vif *_vif) override
+        {
+            vif = dynamic_cast<const VIF *>(_vif);
+            if (!vif)
+                throw std::runtime_error("Wrong VIF type injected into " + name());
+        }
+
     protected:
         virtual bool should_sample() const = 0;
 
         virtual Tx sample() = 0;
 
         tlm::TLMAnalysisPort<Tx> analysis_port;
+
+        const VIF *vif = nullptr;
     };
 }

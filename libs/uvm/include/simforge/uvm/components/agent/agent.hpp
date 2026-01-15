@@ -4,15 +4,24 @@
 #include "driver.hpp"
 #include "sequencer.hpp"
 #include "monitor.hpp"
+#include <simforge/uvm/signals/vif.hpp>
 
 #include <vector>
 
 namespace simforge::uvm::components::agent
 {
-    class Agent : public Component
+    class IAgent : public Component
     {
     public:
-        explicit Agent(Component *parent, std::string name) : Component(std::move(name), parent) {}
+        using Component::Component;
+        virtual ~IAgent() = default;
+    };
+
+    template <typename VIF = signals::Vif>
+    class Agent : public IAgent
+    {
+    public:
+        explicit Agent(Component *parent, std::string name) : IAgent(std::move(name), parent), _vif(std::make_unique<VIF>()) {}
 
         void build_phase() override
         {
@@ -36,13 +45,17 @@ namespace simforge::uvm::components::agent
 
         void connect_phase() override
         {
+            driver->set_vif(_vif.get());
             driver->seq_port.connect(&sequencer->seq_export, &sequencer->seq_export);
 
             sequencer->connect_phase();
             driver->connect_phase();
 
             for (auto *mon : monitors)
+            {
+                mon->set_vif(_vif.get());
                 mon->connect_phase();
+            }
         }
 
         void run_phase(uint64_t sim_time) override {}
@@ -59,8 +72,11 @@ namespace simforge::uvm::components::agent
         }
 
         Sequencer *sequencer = nullptr;
-        Driver *driver = nullptr;
+        IDriver *driver = nullptr;
 
         std::vector<IMonitor *> monitors;
+
+    private:
+        std::unique_ptr<VIF> _vif;
     };
 }

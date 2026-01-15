@@ -32,7 +32,7 @@ namespace simforge::uvm::components
             ptr->parent_ = this;
             T &ref = *ptr;
 
-            if (auto *comp = dynamic_cast<agent::Agent *>(ptr.get()))
+            if (auto *comp = dynamic_cast<agent::IAgent *>(ptr.get()))
                 agents.push_back(comp);
 
             if (auto *comp = dynamic_cast<Scoreboard *>(ptr.get()))
@@ -130,7 +130,7 @@ namespace simforge::uvm::components
         Backend &backend;
 
         std::vector<std::unique_ptr<Component>> components;
-        std::vector<agent::Agent *> agents;
+        std::vector<agent::IAgent *> agents;
 
         template <typename S = Scoreboard>
         S &get_scb() { return *dynamic_cast<S *>(scb); }
