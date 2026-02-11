@@ -9,10 +9,13 @@ add_executable(simforge)
 target_sources(simforge
     PRIVATE
         src/main.cpp
+        src/commands/init.cpp
+        src/config.cpp
 )
 
 target_link_libraries(simforge
     PRIVATE
+        CLI11::CLI11
         simforge::uvm
         simforge::backend::verilator
 )

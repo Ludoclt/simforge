@@ -1,4 +1,4 @@
-option(SIMFORGE_BUILD_CLI "Build SimForge CLI" OFF)
+option(SIMFORGE_BUILD_CLI "Build SimForge CLI" ON)
 option(SIMFORGE_BUILD_GUI "BUILD SimForge GUI" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
