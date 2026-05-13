@@ -29,6 +29,7 @@ void run()
             {"paths", toml::table{
                           {"rtl", toml::array{rtl_path}},
                           {"packages", toml::array{pkg_path}},
+                          {"tb", "tb"},
                           {"build", "build"},
                       }}});
 
