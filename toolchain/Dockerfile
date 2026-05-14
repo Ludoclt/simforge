@@ -50,4 +50,6 @@ RUN cmake -S . -B build -G Ninja \
 
 RUN ln -s /workspace/build/tools/cli/simforge /usr/local/bin/simforge
 
+ENV GTK_THEME=Adwaita:dark
+
 CMD ["/bin/bash"]
