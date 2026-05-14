@@ -2,7 +2,7 @@
 # simforge/toolchain/init.sh
 #
 # Usage (inside an existing project):
-#   source libs/simforge/toolchain/init.sh
+#   bash libs/simforge/toolchain/init.sh
 #
 # Bootstrap from scratch (curl):
 #   curl -fsSL https://raw.githubusercontent.com/Ludoclt/simforge/main/toolchain/init.sh | bash
@@ -194,7 +194,32 @@ else
 fi
 
 # -------------------------------------------------------------------
-# STEP 4 -- .gitignore
+# STEP 5 -- direnv setup
+# -------------------------------------------------------------------
+
+ENVRC="$PROJECT_ROOT/.envrc"
+SOURCE_LINE="source libs/simforge/toolchain/env.sh"
+
+if [ ! -f "$ENVRC" ]; then
+    cat > "$ENVRC" << EOF
+source_up_if_exists
+PATH_add libs/simforge/toolchain/bin
+EOF
+    echo "[simforge] Created .envrc"
+    direnv allow "$PROJECT_ROOT" 2>/dev/null || \
+        echo "[simforge] Run 'direnv allow' to activate shell functions."
+elif ! grep -qF "$SOURCE_LINE" "$ENVRC" 2>/dev/null; then
+    echo "" >> "$ENVRC"
+    echo "$SOURCE_LINE" >> "$ENVRC"
+    echo "[simforge] Added simforge to existing .envrc"
+    direnv allow "$PROJECT_ROOT" 2>/dev/null || \
+        echo "[simforge] Run 'direnv allow' to activate shell functions."
+else
+    echo "[simforge] .envrc already configured."
+fi
+
+# -------------------------------------------------------------------
+# STEP 5 -- .gitignore
 # -------------------------------------------------------------------
 
 if [ "$IS_GIT_REPO" = true ]; then
@@ -203,79 +228,22 @@ if [ "$IS_GIT_REPO" = true ]; then
         echo ".simforge.env" >> "$GITIGNORE"
         echo "[simforge] Added .simforge.env to .gitignore"
     fi
+    if ! grep -q "\.envrc" "$GITIGNORE" 2>/dev/null; then
+        echo ".envrc" >> "$GITIGNORE"
+        echo "[simforge] Added .envrc to .gitignore"
+    fi
 fi
 
-# -------------------------------------------------------------------
-# STEP 5 -- Shell functions
-# -------------------------------------------------------------------
-
-COMPOSE_CMD="docker compose \
-    --env-file $ENV_FILE \
-    -f $SIMFORGE_TOOLCHAIN_DIR/compose.yaml"
-
-simforge-up()
-{
-    xhost +local:docker 2>/dev/null || true
-    $COMPOSE_CMD up -d --build
-}
-
-simforge-shell()
-{
-    xhost +local:docker 2>/dev/null || true
-    $COMPOSE_CMD up -d
-    docker exec -it "$(basename "$PROJECT_ROOT")-toolchain" /bin/bash
-}
-
-simforge-down()
-{
-    $COMPOSE_CMD down
-}
-
-simforge-rebuild()
-{
-    xhost +local:docker 2>/dev/null || true
-    $COMPOSE_CMD down
-    $COMPOSE_CMD up -d --build
-}
-
-export -f simforge-up simforge-shell simforge-down simforge-rebuild
-
-# -------------------------------------------------------------------
-# STEP 6 -- Suggest permanent setup
-# -------------------------------------------------------------------
-
 echo ""
-echo "[simforge] Setup complete. Available commands:"
+echo "[simforge] Setup complete."
+echo "[simforge] Shell functions are loaded automatically via direnv when in this directory."
+echo "[simforge] Available commands:"
 echo "  simforge-up       -- build and start the container"
 echo "  simforge-shell    -- open a shell inside the container"
 echo "  simforge-down     -- stop the container"
 echo "  simforge-rebuild  -- rebuild the image and restart"
 echo ""
-
-if ask_yes_no "Add simforge init to your shell rc file for permanent access?"; then
-
-    RC_FILE=""
-    case "$SHELL" in
-        */zsh)  RC_FILE="$HOME/.zshrc" ;;
-        */bash) RC_FILE="$HOME/.bashrc" ;;
-        *)
-            RC_FILE=$(ask_input "Shell rc file not detected, enter path" "$HOME/.bashrc")
-            ;;
-    esac
-
-    SOURCE_LINE="source $SIMFORGE_TOOLCHAIN_DIR/init.sh"
-
-    if ! grep -qF "$SOURCE_LINE" "$RC_FILE" 2>/dev/null; then
-        echo "" >> "$RC_FILE"
-        echo "# simforge toolchain -- $(basename "$PROJECT_ROOT")" >> "$RC_FILE"
-        echo "$SOURCE_LINE" >> "$RC_FILE"
-        echo "[simforge] Added to $RC_FILE"
-        echo "[simforge] Run 'source $RC_FILE' or open a new terminal to apply."
-    else
-        echo "[simforge] Already present in $RC_FILE, skipping."
-    fi
-fi
-
-echo ""
 echo "[simforge] Done."
 echo ""
+echo "[simforge] If you do not use direnv, add this to your .bashrc or .zshrc:"
+echo "  source $SIMFORGE_TOOLCHAIN_DIR/env.sh"

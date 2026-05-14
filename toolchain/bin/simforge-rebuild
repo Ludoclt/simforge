@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+SIMFORGE_TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Find PROJECT_ROOT by locating .simforge.env upward
+PROJECT_ROOT=""
+search_dir="$SIMFORGE_TOOLCHAIN_DIR"
+while [ "$search_dir" != "/" ]; do
+    if [ -f "$search_dir/.simforge.env" ]; then
+        PROJECT_ROOT="$search_dir"
+        break
+    fi
+    search_dir="$(dirname "$search_dir")"
+done
+
+if [ -z "$PROJECT_ROOT" ]; then
+    echo "[simforge] Error: could not find .simforge.env in any parent directory."
+    exit 1
+fi
+
+ENV_FILE="$PROJECT_ROOT/.simforge.env"
+
+xhost +local:docker 2>/dev/null || true
+docker compose --env-file "$ENV_FILE" -f "$SIMFORGE_TOOLCHAIN_DIR/compose.yaml" down
+docker compose --env-file "$ENV_FILE" -f "$SIMFORGE_TOOLCHAIN_DIR/compose.yaml" up -d --build
