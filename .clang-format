@@ -1,0 +1,58 @@
+Language: Cpp
+BasedOnStyle: LLVM
+
+# --- Indentation ---
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentCaseLabels: false
+IndentPPDirectives: BeforeHash
+NamespaceIndentation: All
+
+# --- Line length ---
+ColumnLimit: 200
+
+# --- Braces ---
+BreakBeforeBraces: Allman
+
+# --- Spaces ---
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyBlock: false
+SpaceAfterCStyleCast: false
+SpacesInAngles: Never
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# --- Pointers and references ---
+PointerAlignment: Right
+
+# --- Alignement ---
+AlignAfterOpenBracket: BlockIndent
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignTrailingComments: true
+
+# --- Line breaks ---
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AlwaysBreakAfterReturnType: None
+
+# --- Includes ---
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+
+# --- modern C++ ---
+Standard: Latest
+Cpp11BracedListStyle: true
+
+# --- Miscellaneous ---
+FixNamespaceComments: true
+CompactNamespaces: false
+ReflowComments: true
+MaxEmptyLinesToKeep: 1

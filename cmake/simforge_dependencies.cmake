@@ -13,3 +13,7 @@ FetchContent_Declare(
   GIT_TAG v0.9.5
 )
 FetchContent_MakeAvailable(magic_enum)
+
+add_subdirectory(libs/CLI11 EXCLUDE_FROM_ALL)
+add_subdirectory(libs/json EXCLUDE_FROM_ALL)
+add_subdirectory(libs/tomlplusplus EXCLUDE_FROM_ALL)
