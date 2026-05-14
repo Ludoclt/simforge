@@ -1,55 +1,58 @@
+#include "init.hpp"
+
+#include "../config/config_loader.hpp"
+
 #include <CLI/CLI.hpp>
-#include <toml++/toml.hpp>
-
-#include <iostream>
-#include <string>
 #include <filesystem>
-#include <fstream>
+#include <iostream>
 
-#include "../config.hpp"
-
-using namespace simforge::cli;
-
-static std::string project_name;
-static std::string pkg_path;
-static std::string rtl_path;
-
-void run()
+namespace
 {
-    config::init();
+    struct InitOptions
+    {
+        std::string name;
+        std::string rtl_path;
+        std::vector<std::string> pkg_paths;
+        bool force = false;
+    };
 
-    config::add_table(
-        toml::table{
-            {"project", toml::table{
-                            {"name", project_name},
-                        }}});
+    void run(const InitOptions &opts)
+    {
+        const auto cwd = std::filesystem::current_path();
 
-    config::add_table(
-        toml::table{
-            {"paths", toml::table{
-                          {"rtl", toml::array{rtl_path}},
-                          {"packages", toml::array{pkg_path}},
-                          {"tb", "tb"},
-                          {"build", "build"},
-                      }}});
+        simforge::cli::SimforgeConfig cfg;
+        cfg.project.name = opts.name;
+        cfg.paths.rtl = opts.rtl_path;
+        cfg.paths.packages = opts.pkg_paths;
+        cfg.paths.tb = "tb";
+        cfg.paths.build = "build";
+        cfg.verilator.args = {"--sv"};
+        cfg.artifacts.vcd = true;
+        cfg.artifacts.log = true;
 
-    config::add_table(
-        toml::table{
-            {"artifacts", toml::table{
-                              {"vcd", true},
-                              {"log", true},
-                          }}});
+        simforge::cli::ConfigLoader::write_default(cfg, cwd, opts.force);
 
-    std::cout << "done." << std::endl;
-}
+        std::cout << "OK: Initialized simforge project '" << cfg.project.name << "'\n"
+                  << "  -> " << (cwd / simforge::cli::kConfigFilename).string() << "\n\n"
+                  << "Next steps:\n"
+                  << "  simforge tb init " << cfg.paths.rtl << "/<module>.sv --top <module>\n"
+                  << "  simforge build <module>\n"
+                  << "  simforge run   <module>\n";
+    }
+} // anonymous namespace
 
 void register_init_command(CLI::App &app)
 {
-    CLI::App *cmd = app.add_subcommand("init", "Init simforge project");
+    auto *cmd = app.add_subcommand("init", "Initialize a simforge project in the current directory");
+    auto opts = std::make_shared<InitOptions>();
 
-    cmd->add_option("--name", project_name, "Name of the simforge project")->default_val(std::filesystem::current_path().filename().string());
-    cmd->add_option("--pkg", pkg_path, "SystemVerilog packages path")->check(CLI::ExistingDirectory);
-    cmd->add_option("--rtl", rtl_path, "SystemVerilog rtl modules path")->required()->check(CLI::ExistingDirectory);
+    cmd->add_option("--name", opts->name, "Project name (defaults to current directory name)")->default_val(std::filesystem::current_path().filename().string());
 
-    cmd->callback(&run);
+    cmd->add_option("--rtl", opts->rtl_path, "Path to SystemVerilog RTL sources")->required()->check(CLI::ExistingDirectory);
+
+    cmd->add_option("--pkg", opts->pkg_paths, "Path(s) to SystemVerilog package directories (repeatable)")->check(CLI::ExistingDirectory);
+
+    cmd->add_flag("--force", opts->force, "Overwrite existing simforge.toml")->default_val(false);
+
+    cmd->callback([opts]() { run(*opts); });
 }
