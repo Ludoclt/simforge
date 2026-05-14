@@ -1,0 +1,31 @@
+#include "{{MODULE}}_defs.hpp"
+
+// Basic (non-UVM) testbench for {{MODULE_UPPER}}.
+// Manually drives the DUT and checks outputs.
+// For a full UVM environment, regenerate with: simforge tb init --style uvm
+
+int main(int argc, char **argv)
+{
+    Verilated::commandArgs(argc, argv);
+
+    // Create and configure DUT
+    auto dut = std::make_unique<{{DUT_CLASS}}>();
+
+    // Clock / reset
+    auto tick = [&]()
+    {
+        dut->{{CLK_SIGNAL}} = 0; dut->eval();
+        dut->{{CLK_SIGNAL}} = 1; dut->eval();
+    };
+
+    // Apply reset
+    dut->{{RST_SIGNAL}} = 0;
+    for (int i = 0; i < 4; ++i) tick();
+    dut->{{RST_SIGNAL}} = 1;
+
+    // Stimulus
+    // TODO: drive DUT inputs and check outputs
+
+    dut->final();
+    return 0;
+}

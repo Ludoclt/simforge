@@ -1,0 +1,12 @@
+#pragma once
+
+// Umbrella include: pull in all UVM components for this testbench
+// Include this only from env.cpp to avoid ODR violations
+
+#include "{{MODULE}}_scb.hpp"
+#include "{{MODULE}}_cov.hpp"
+#include "./agent/{{MODULE}}_drv.hpp"
+#include "./agent/{{MODULE}}_seq.hpp"
+#include "./agent/{{MODULE}}_mon.hpp"
+#include "./signals/{{MODULE}}_vif.hpp"
+#include "{{MODULE}}_env.hpp"

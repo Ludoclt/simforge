@@ -1,0 +1,7 @@
+#pragma once
+
+#include <verilated.h>
+#include "{{DUT_CLASS}}.h"
+
+#define CLK_SIG {{CLK_SIGNAL}}
+#define RST_SIG {{RST_SIGNAL}}

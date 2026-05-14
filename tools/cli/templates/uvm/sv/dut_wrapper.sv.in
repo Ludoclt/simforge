@@ -1,0 +1,42 @@
+// Auto-generated DUT wrapper for {{MODULE_UPPER}}
+// Adds clk / rst_n flip-flop stage so the combinational RTL integrates cleanly
+// with the simforge UVM clock/reset model.
+//
+// Edit freely, simforge will not overwrite this file after initial generation.
+
+{{SV_PACKAGE_IMPORTS}}
+
+module {{TOP_MODULE}} (
+    input  logic clk,
+    input  logic rst_n,
+
+{{SV_PORT_LIST}}
+);
+
+  // Internal registered signals
+{{SV_INTERNAL_REGS}}
+
+  // DUT instantiation
+  {{MODULE}} u_{{MODULE}} (
+{{SV_PORT_CONNECTIONS}}
+  );
+
+  // Input register stage
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+{{SV_RESET_BLOCK}}
+    end else begin
+{{SV_REG_BLOCK}}
+    end
+  end
+
+  // Output register stage
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+{{SV_OUT_RESET_BLOCK}}
+    end else begin
+{{SV_OUT_REG_BLOCK}}
+    end
+  end
+
+endmodule

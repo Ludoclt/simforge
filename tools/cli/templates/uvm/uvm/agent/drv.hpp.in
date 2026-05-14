@@ -1,0 +1,48 @@
+#pragma once
+
+#include "../../{{MODULE}}_defs.hpp"
+#include "../../{{MODULE}}_data.hpp"
+#include "../signals/{{MODULE}}_vif.hpp"
+
+class {{MODULE_PASCAL}}Driver : public sfuvma::Driver<{{MODULE_PASCAL}}Vif>
+{
+public:
+    using sfuvma::Driver<{{MODULE_PASCAL}}Vif>::Driver;
+
+    bool should_drive() const override
+    {
+        return clk().posedge() && !rst().is_asserted();
+    }
+
+    void drive(std::shared_ptr<sfuvm::InputData> data) override
+    {
+        // vif is const VIF* in the Driver base, cast to write input signals
+        auto *w = const_cast<{{MODULE_PASCAL}}Vif *>(vif);
+
+        // TODO: deassert all input valids first, e.g.:
+        // w->in_valid = 0;
+
+        if (data == nullptr)
+        {
+            logger()->debug("NULL transaction - idle cycle");
+            return;
+        }
+
+        auto tx = std::dynamic_pointer_cast<{{MODULE_PASCAL}}InData>(data);
+        if (!tx)
+            throw std::runtime_error("Driver received wrong transaction type");
+
+        // TODO: write tx fields to VIF inputs, e.g.:
+        // w->my_input = tx->data_in;
+        // w->in_valid = 1;
+        (void)w;
+    }
+
+    void on_packet_waiting() const override
+    {
+        // TODO: deassert valid / strobe while sequencer is generating next tx
+        // const_cast<{{MODULE_PASCAL}}Vif *>(vif)->in_valid = 0;
+    }
+
+    void on_reset() override {}
+};

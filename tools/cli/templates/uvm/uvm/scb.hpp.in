@@ -1,0 +1,69 @@
+#pragma once
+
+#include "../{{MODULE}}_defs.hpp"
+#include "../{{MODULE}}_data.hpp"
+#include "{{MODULE}}_env.hpp"
+
+#include <vector>
+#include <tuple>
+
+class {{MODULE_PASCAL}}Scoreboard
+    : public sfuvmc::Scoreboard,
+      public sfuvmtlm::ITLMAnalysisIf<std::shared_ptr<{{MODULE_PASCAL}}InData>>,
+      public sfuvmtlm::ITLMAnalysisIf<std::shared_ptr<{{MODULE_PASCAL}}OutData>>
+{
+public:
+    {{MODULE_PASCAL}}Scoreboard(Component *parent, std::string name = "{{MODULE_UPPER}} SCB")
+        : Scoreboard(parent, name), in_export(this), out_export(this)
+    {}
+
+    void build_phase()   override {}
+    void connect_phase() override {}
+    void run_phase(uint64_t) override {}
+
+    void report_phase() override
+    {
+        logger()->info("### Scoreboard Report ###############################");
+        logger()->info("Errors: {}", errors_.size());
+        for (auto &[in, exp, got, t] : errors_)
+            logger()->error("  t={} | in={} | expected={} | got={}", t, in, exp, got);
+        logger()->info("#####################################################");
+
+        if (!errors_.empty())
+            throw std::runtime_error("Scoreboard detected mismatches - verification FAILED");
+    }
+
+    void on_reset() override
+    {
+        for (std::shared_ptr<{{MODULE_PASCAL}}InData> tmp; in_fifo_.try_get(tmp););
+    }
+
+    void write(const std::shared_ptr<{{MODULE_PASCAL}}InData> &item) override
+    {
+        in_fifo_.put(item);
+        // TODO: push to reference model
+        // {{MODULE_PASCAL}}Runner::current().env().ref_model.push_input(*item);
+    }
+
+    void write(const std::shared_ptr<{{MODULE_PASCAL}}OutData> &item) override
+    {
+        // TODO: compare with reference model output
+        // auto expected = {{MODULE_PASCAL}}Runner::current().env().ref_model.pop_expected();
+        auto input = in_fifo_.get();
+        (void)input;
+        (void)item;
+    }
+
+    sfuvmtlm::TLMAnalysisExport<std::shared_ptr<{{MODULE_PASCAL}}InData>>  in_export;
+    sfuvmtlm::TLMAnalysisExport<std::shared_ptr<{{MODULE_PASCAL}}OutData>> out_export;
+
+private:
+    sfuvmtlm::TLMFifo<{{MODULE_PASCAL}}InData> in_fifo_;
+
+    // {input, expected, got, sim_time}
+    std::vector<std::tuple<
+        std::shared_ptr<{{MODULE_PASCAL}}InData>,
+        std::shared_ptr<{{MODULE_PASCAL}}OutData>,
+        std::shared_ptr<{{MODULE_PASCAL}}OutData>,
+        uint64_t>> errors_;
+};

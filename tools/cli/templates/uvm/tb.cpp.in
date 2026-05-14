@@ -1,0 +1,20 @@
+#include "{{MODULE}}_defs.hpp"
+#include "uvm/{{MODULE}}_env.hpp"
+
+int main(int argc, char **argv)
+{
+    Verilated::commandArgs(argc, argv);
+
+    // Runner<Backend, Env>(log_level, env_name, trace_level, reset_cycles)
+    {{MODULE_PASCAL}}Runner runner(spdlog::level::info, "{{MODULE_UPPER}}_TB", TRACE_LEVEL);
+
+    runner.backend().create_dut();
+
+    // Bind clock, adjust with_period() to match your target frequency
+    runner.backend().bind_signal(sfuvmsig::clock(&runner.backend().get_dut().CLK_SIG).with_period(2));
+
+    // Bind reset, use .active_high() if your DUT uses active-high reset
+    runner.backend().bind_signal(sfuvmsig::reset(&runner.backend().get_dut().RST_SIG).active_low());
+
+    runner.run();
+}

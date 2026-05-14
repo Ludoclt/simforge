@@ -1,0 +1,59 @@
+#pragma once
+
+#include "../../{{MODULE}}_defs.hpp"
+#include "../../{{MODULE}}_data.hpp"
+#include "../signals/{{MODULE}}_vif.hpp"
+
+// Input monitor: observes stimulus on the DUT's input pins
+
+class {{MODULE_PASCAL}}InputMonitor : public sfuvma::Monitor<{{MODULE_PASCAL}}InData, {{MODULE_PASCAL}}Vif>
+{
+public:
+    using sfuvma::Monitor<{{MODULE_PASCAL}}InData, {{MODULE_PASCAL}}Vif>::Monitor;
+
+    void connect_phase() override
+    {
+        auto &env = {{MODULE_PASCAL}}Runner::current().env();
+        analysis_port.connect(&env.template get_scb<{{MODULE_PASCAL}}Scoreboard>().in_export);
+        analysis_port.connect(&env.template get_cov<{{MODULE_PASCAL}}Coverage>().in_export);
+    }
+
+    bool should_sample() const override
+    {
+        return clk().posedge() && !rst().is_asserted();
+    }
+
+    Tx sample() override
+    {
+        // TODO: return nullptr to skip this cycle (e.g. when valid = 0)
+        // if (!vif->in_valid) return nullptr;
+
+        return std::make_shared<{{MODULE_PASCAL}}InData>(/* TODO: capture fields */);
+    }
+};
+
+// Output monitor: observes results on the DUT's output pins
+
+class {{MODULE_PASCAL}}OutputMonitor : public sfuvma::Monitor<{{MODULE_PASCAL}}OutData, {{MODULE_PASCAL}}Vif>
+{
+public:
+    using sfuvma::Monitor<{{MODULE_PASCAL}}OutData, {{MODULE_PASCAL}}Vif>::Monitor;
+
+    void connect_phase() override
+    {
+        auto &env = {{MODULE_PASCAL}}Runner::current().env();
+        analysis_port.connect(&env.template get_scb<{{MODULE_PASCAL}}Scoreboard>().out_export);
+        analysis_port.connect(&env.template get_cov<{{MODULE_PASCAL}}Coverage>().out_export);
+    }
+
+    bool should_sample() const override
+    {
+        return clk().posedge() && !rst().is_asserted();
+    }
+
+    Tx sample() override
+    {
+        // TODO: return nullptr to skip this cycle
+        return std::make_shared<{{MODULE_PASCAL}}OutData>(/* TODO: capture fields */);
+    }
+};

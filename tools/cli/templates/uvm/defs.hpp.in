@@ -1,0 +1,28 @@
+#pragma once
+
+#include <simforge/uvm.hpp>
+#include <simforge/backend/verilator/verilator_backend.hpp>
+
+#include "{{DUT_CLASS}}.h"
+
+// Namespace aliases
+namespace sfuvm    = simforge::uvm;
+namespace sfuvmsig = simforge::uvm::signals;
+namespace sfuvmtlm = simforge::uvm::tlm;
+namespace sfuvmc   = simforge::uvm::components;
+namespace sfuvma   = simforge::uvm::components::agent;
+namespace sfbv     = simforge::backend::verilator;
+
+// Runner type alias: ties the DUT and the UVM Env together
+using {{MODULE_PASCAL}}Runner = sfuvm::Runner<sfbv::VerilatorBackend<{{DUT_CLASS}}>, class {{MODULE_PASCAL}}Env>;
+
+// Convenience macro: access DUT signals from anywhere
+#define DUT {{MODULE_PASCAL}}Runner::current().backend().get_dut()
+
+// Signal pin names
+// Edit these if your DUT uses different signal names
+#define CLK_SIG {{CLK_SIGNAL}}
+#define RST_SIG {{RST_SIGNAL}}
+
+// Verilator trace depth (0 = off)
+inline const int TRACE_LEVEL = {{TRACE_LEVEL}};

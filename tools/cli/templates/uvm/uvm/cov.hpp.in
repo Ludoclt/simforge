@@ -1,0 +1,57 @@
+#pragma once
+
+#include "../{{MODULE}}_defs.hpp"
+#include "../{{MODULE}}_data.hpp"
+
+class {{MODULE_PASCAL}}Coverage
+    : public sfuvmc::Coverage,
+      public sfuvmtlm::ITLMAnalysisIf<std::shared_ptr<{{MODULE_PASCAL}}InData>>,
+      public sfuvmtlm::ITLMAnalysisIf<std::shared_ptr<{{MODULE_PASCAL}}OutData>>
+{
+public:
+    {{MODULE_PASCAL}}Coverage(Component *parent, float goal = 95.0f,
+                              std::string name = "{{MODULE_UPPER}} COV")
+        : Coverage(parent, goal, name), in_export(this), out_export(this)
+    {}
+
+    void build_phase() override
+    {
+        // Define coverage bins
+        // TODO: add domain-specific bins here
+        coverage_bins["input.zero"]    = {};
+        coverage_bins["input.max"]     = {};
+        coverage_bins["input.other"]   = {};
+        coverage_bins["output.zero"]   = {};
+        coverage_bins["output.nonzero"]= {};
+    }
+
+    void on_reset() override
+    {
+        for (std::shared_ptr<{{MODULE_PASCAL}}InData> tmp; in_fifo_.try_get(tmp););
+    }
+
+    void write(const std::shared_ptr<{{MODULE_PASCAL}}InData> &item) override
+    {
+        in_fifo_.put(item);
+
+        // TODO: hit input bins
+        coverage_bins[item->data_in == 0x00 ? "input.zero"
+                    : item->data_in == 0xFF ? "input.max"
+                    :                         "input.other"].hits++;
+    }
+
+    void write(const std::shared_ptr<{{MODULE_PASCAL}}OutData> &item) override
+    {
+        auto in = in_fifo_.get();
+        (void)in;
+
+        // TODO: hit output bins
+        coverage_bins[item->data_out == 0 ? "output.zero" : "output.nonzero"].hits++;
+    }
+
+    sfuvmtlm::TLMAnalysisExport<std::shared_ptr<{{MODULE_PASCAL}}InData>>  in_export;
+    sfuvmtlm::TLMAnalysisExport<std::shared_ptr<{{MODULE_PASCAL}}OutData>> out_export;
+
+private:
+    sfuvmtlm::TLMFifo<{{MODULE_PASCAL}}InData> in_fifo_;
+};

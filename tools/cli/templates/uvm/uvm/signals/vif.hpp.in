@@ -1,0 +1,27 @@
+#pragma once
+
+#include "../../{{MODULE}}_defs.hpp"
+
+// #############################################################################
+//  Virtual Interface - mirrors the DUT's I/O pins.
+//
+//  All fields are non-const references into the Verilated DUT struct so both
+//  the driver (writes inputs) and monitors (read outputs) share the same view.
+//
+//  The Driver base receives a `const VIF*` - use const_cast in drive() when
+//  you need to write to input fields (this is intentional: only the driver
+//  mutates inputs, verified by convention not by the type system).
+//
+//  TODO: add / remove fields to match {{DUT_CLASS}}'s port list.
+// #############################################################################
+
+struct {{MODULE_PASCAL}}Vif : public sfuvmsig::Vif
+{
+    // Inputs (written by driver)
+{{VIF_INPUT_FIELDS}}
+    // Outputs (read by monitors)
+{{VIF_OUTPUT_FIELDS}}
+    {{MODULE_PASCAL}}Vif()
+{{VIF_CTOR_INIT}}
+    {}
+};
