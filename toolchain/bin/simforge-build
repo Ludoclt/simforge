@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
+# --- Find SIMFORGE_TOOLCHAIN_DIR and PROJECT_ROOT ---
+
 SIMFORGE_TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Find PROJECT_ROOT by locating .simforge.env upward
 PROJECT_ROOT=""
 search_dir="$SIMFORGE_TOOLCHAIN_DIR"
 while [ "$search_dir" != "/" ]; do
@@ -19,5 +22,21 @@ if [ -z "$PROJECT_ROOT" ]; then
 fi
 
 ENV_FILE="$PROJECT_ROOT/.simforge.env"
+# shellcheck source=/dev/null
+source "$ENV_FILE"
 
-docker compose --env-file "$ENV_FILE" -f "$SIMFORGE_TOOLCHAIN_DIR/compose.yaml" down
+IMAGE_NAME="${PROJECT_NAME:-simforge}-toolchain"
+
+# --- Build ---
+
+echo "[simforge] Building image: $IMAGE_NAME"
+echo "[simforge] Context: $SIMFORGE_TOOLCHAIN_DIR/.."
+echo ""
+
+docker build \
+    --tag "$IMAGE_NAME" \
+    --file "$SIMFORGE_TOOLCHAIN_DIR/Dockerfile" \
+    "$SIMFORGE_TOOLCHAIN_DIR/.."
+
+echo ""
+echo "[simforge] Image '$IMAGE_NAME' built successfully."

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
+# --- Find SIMFORGE_TOOLCHAIN_DIR and PROJECT_ROOT ---
+
 SIMFORGE_TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Find PROJECT_ROOT by locating .simforge.env upward
 PROJECT_ROOT=""
 search_dir="$SIMFORGE_TOOLCHAIN_DIR"
 while [ "$search_dir" != "/" ]; do
@@ -19,7 +22,30 @@ if [ -z "$PROJECT_ROOT" ]; then
 fi
 
 ENV_FILE="$PROJECT_ROOT/.simforge.env"
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+
+IMAGE_NAME="${PROJECT_NAME:-simforge}-toolchain"
+
+# --- Check image exists ---
+
+if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+    echo "[simforge] Image '$IMAGE_NAME' not found. Run 'simforge-build' first."
+    exit 1
+fi
+
+# --- Run ---
+
+echo "[simforge] Starting toolchain shell (container will be removed on exit)..."
+echo ""
 
 xhost +local:docker 2>/dev/null || true
-docker compose --env-file "$ENV_FILE" -f "$SIMFORGE_TOOLCHAIN_DIR/compose.yaml" up -d
-docker exec -it "$(basename "$PROJECT_ROOT")-toolchain" /bin/bash
+
+docker run --rm -it \
+    --name "${IMAGE_NAME}-session" \
+    -v "$PROJECT_ROOT":/project \
+    -e DISPLAY="$DISPLAY" \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    -w /project \
+    "$IMAGE_NAME" \
+    /bin/bash
