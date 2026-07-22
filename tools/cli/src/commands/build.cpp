@@ -16,16 +16,17 @@ namespace
     struct BuildOptions
     {
         std::string tb_name; // empty = build all
+        std::string group;
         int jobs = 0;
     };
 
-    void build_one(const SimforgeConfig &cfg, const std::string &name, const std::filesystem::path &root)
+    void build_one(const SimforgeConfig &cfg, const TestbenchConfig &tb, const std::filesystem::path &root, int jobs_override)
     {
-        std::cout << "== Building '" << name << "' ============================\n";
+        std::cout << "== Building '" << tb.subdir() << "' ============================\n";
 
-        generate_tb_cmake(cfg, name, root);
+        generate_tb_cmake(cfg, tb.subdir(), root);
 
-        const auto build_dir = root / cfg.paths.build / "tb" / name;
+        const auto build_dir = root / cfg.paths.build / "tb" / tb.subdir();
 
         std::vector<std::string> cmake_cfg_args = {
             "-S",
@@ -52,8 +53,7 @@ namespace
             "--build",
             build_dir.string(),
         };
-        const auto &tb = cfg.get_tb(name);
-        int jobs = cfg.effective_verilator(name).jobs;
+        int jobs = jobs_override > 0 ? jobs_override : cfg.effective_verilator(tb.subdir()).jobs;
         if (jobs > 0)
         {
             cmake_build_args.push_back("--parallel");
@@ -65,7 +65,7 @@ namespace
         if (rc != 0)
             throw std::runtime_error("cmake build failed (exit " + std::to_string(rc) + ")");
 
-        std::cout << "OK: '" << name << "' built successfully.\n";
+        std::cout << "OK: '" << tb.subdir() << "' built successfully.\n";
     }
 
     void run(const BuildOptions &opts)
@@ -73,15 +73,24 @@ namespace
         const auto root = std::filesystem::current_path();
         const auto cfg = ConfigLoader::load(root);
 
-        if (opts.tb_name.empty())
+        if (!opts.tb_name.empty())
         {
-            for (const auto &tb : cfg.testbenches)
-                build_one(cfg, tb.name, root);
+            build_one(cfg, cfg.get_tb(opts.tb_name), root, opts.jobs);
+            return;
         }
-        else
+
+        if (!opts.group.empty())
         {
-            build_one(cfg, opts.tb_name, root);
+            auto matches = cfg.in_group(opts.group);
+            if (matches.empty())
+                throw std::runtime_error("No testbench found in group '" + opts.group + "'");
+            for (const auto &tb : matches)
+                build_one(cfg, tb.get(), root, opts.jobs);
+            return;
         }
+
+        for (const auto &tb : cfg.testbenches)
+            build_one(cfg, tb, root, opts.jobs);
     }
 } // anonymous namespace
 
@@ -91,7 +100,14 @@ void register_build_command(CLI::App &app)
 
     auto opts = std::make_shared<BuildOptions>();
 
-    cmd->add_option("tb_name", opts->tb_name, "Testbench name as declared in simforge.toml (omit to build all)");
+    cmd->add_option(
+        "tb_name",
+        opts->tb_name,
+        "Testbench name as declared in simforge.toml — bare name if unambiguous, or "
+        "'<group>/<name>' to disambiguate (omit to build all, or all of --group)"
+    );
+
+    cmd->add_option("--group", opts->group, "Build all testbenches in this group (ignored if tb_name is given)");
 
     cmd->add_option("-j,--jobs", opts->jobs, "Parallel build jobs (overrides [verilator] jobs in TOML)");
 

@@ -132,6 +132,9 @@ namespace simforge::cli
                     throw std::runtime_error("Testbench '" + tb.name + "' is missing required 'top' field.");
                 tb.top = **t->get_as<std::string>("top");
 
+                if (const auto *g = t->get_as<std::string>("group"))
+                    tb.group = **g;
+
                 if (const auto *sty = t->get_as<std::string>("style"))
                     tb.style = parse_style(**sty);
 
@@ -146,20 +149,21 @@ namespace simforge::cli
             }
         }
 
+        // guard against stale duplicate entries
+        for (size_t i = 0; i < cfg.testbenches.size(); ++i)
+            for (size_t j = i + 1; j < cfg.testbenches.size(); ++j)
+                if (cfg.testbenches[i].subdir() == cfg.testbenches[j].subdir())
+                    throw std::runtime_error(
+                        "simforge.toml has duplicate [[testbenches]] entries for '" + cfg.testbenches[i].subdir() +
+                        "' - remove one of them by hand (this can happen from repeated 'simforge tb init' runs "
+                        "on older simforge versions)."
+                    );
+
         return cfg;
     }
 
-    void ConfigLoader::write_default(const SimforgeConfig &cfg, const std::filesystem::path &dir, bool force)
+    void ConfigLoader::write_header(std::ostream &f, const SimforgeConfig &cfg)
     {
-        const auto path = dir / kConfigFilename;
-
-        if (std::filesystem::exists(path) && !force)
-            throw std::runtime_error("simforge.toml already exists in " + dir.string() + "\nUse --force to overwrite.");
-
-        std::ofstream f(path);
-        if (!f)
-            throw std::runtime_error("Cannot write " + path.string());
-
         f << "[project]\n"
           << "name        = \"" << cfg.project.name << "\"\n"
           << "version     = \"" << cfg.project.version << "\"\n"
@@ -183,9 +187,23 @@ namespace simforge::cli
         }
 
         f << "\n"
-          << "[verilator]\n"
-          << "args  = [\"--sv\"]\n"
-          << "jobs  = 0\n"
+          << "[verilator]\n";
+        if (!cfg.verilator.args.empty())
+        {
+            f << "args  = [";
+            for (size_t i = 0; i < cfg.verilator.args.size(); ++i)
+            {
+                if (i)
+                    f << ", ";
+                f << "\"" << cfg.verilator.args[i] << "\"";
+            }
+            f << "]\n";
+        }
+        else
+        {
+            f << "args  = [\"--sv\"]\n";
+        }
+        f << "jobs  = " << cfg.verilator.jobs << "\n"
           << "\n"
           << "[artifacts]\n"
           << "vcd = " << (cfg.artifacts.vcd ? "true" : "false") << "\n"
@@ -193,20 +211,16 @@ namespace simforge::cli
           << "log = " << (cfg.artifacts.log ? "true" : "false") << "\n";
     }
 
-    void ConfigLoader::append_testbench(const TestbenchConfig &tb, const std::filesystem::path &dir)
+    void ConfigLoader::write_tb_block(std::ostream &f, const TestbenchConfig &tb)
     {
-        const auto path = dir / kConfigFilename;
-        if (!std::filesystem::exists(path))
-            throw std::runtime_error("No simforge.toml in " + dir.string());
-
-        std::ofstream f(path, std::ios::app);
-        if (!f)
-            throw std::runtime_error("Cannot open " + path.string() + " for appending.");
-
         f << "\n[[testbenches]]\n"
           << "name  = \"" << tb.name << "\"\n"
-          << "top   = \"" << tb.top << "\"\n"
-          << "style = \"" << style_to_string(tb.style) << "\"\n";
+          << "top   = \"" << tb.top << "\"\n";
+
+        if (!tb.group.empty())
+            f << "group = \"" << tb.group << "\"\n";
+
+        f << "style = \"" << style_to_string(tb.style) << "\"\n";
 
         if (!tb.sv_top.empty())
             f << "sv_top = \"" << tb.sv_top << "\"\n";
@@ -229,6 +243,75 @@ namespace simforge::cli
                 }
                 f << "]\n";
             }
+
+            if (!tb.verilator.include_dirs.empty())
+            {
+                f << "  include_dirs = [";
+                for (size_t i = 0; i < tb.verilator.include_dirs.size(); ++i)
+                {
+                    if (i)
+                        f << ", ";
+                    f << "\"" << tb.verilator.include_dirs[i] << "\"";
+                }
+                f << "]\n";
+            }
         }
+    }
+
+    void ConfigLoader::write_default(const SimforgeConfig &cfg, const std::filesystem::path &dir, bool force)
+    {
+        const auto path = dir / kConfigFilename;
+
+        if (std::filesystem::exists(path) && !force)
+            throw std::runtime_error("simforge.toml already exists in " + dir.string() + "\nUse --force to overwrite.");
+
+        std::ofstream f(path);
+        if (!f)
+            throw std::runtime_error("Cannot write " + path.string());
+
+        write_header(f, cfg);
+        for (const auto &tb : cfg.testbenches)
+            write_tb_block(f, tb);
+    }
+
+    void ConfigLoader::save(const SimforgeConfig &cfg, const std::filesystem::path &dir)
+    {
+        const auto path = dir / kConfigFilename;
+
+        std::ofstream f(path, std::ios::trunc);
+        if (!f)
+            throw std::runtime_error("Cannot write " + path.string());
+
+        write_header(f, cfg);
+        for (const auto &tb : cfg.testbenches)
+            write_tb_block(f, tb);
+    }
+
+    void ConfigLoader::upsert_testbench(const TestbenchConfig &tb, const std::filesystem::path &dir, bool force)
+    {
+        const auto path = dir / kConfigFilename;
+        if (!std::filesystem::exists(path))
+            throw std::runtime_error("No simforge.toml in " + dir.string() + "\nRun 'simforge init' first.");
+
+        SimforgeConfig cfg = load(dir);
+
+        auto it = std::find_if(cfg.testbenches.begin(), cfg.testbenches.end(), [&](const TestbenchConfig &existing) { return existing.subdir() == tb.subdir(); });
+
+        if (it != cfg.testbenches.end())
+        {
+            if (!force)
+                throw std::runtime_error(
+                    "Testbench '" + tb.subdir() +
+                    "' is already registered in simforge.toml.\n"
+                    "Use --force to regenerate it (this overwrites its generated files), or pick a different --name/--group."
+                );
+            *it = tb;
+        }
+        else
+        {
+            cfg.testbenches.push_back(tb);
+        }
+
+        save(cfg, dir);
     }
 } // namespace simforge::cli

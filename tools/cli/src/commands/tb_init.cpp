@@ -9,6 +9,7 @@
 #include <cctype>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <sstream>
 
 // Embedded templates
@@ -141,12 +142,23 @@ namespace
     {
         std::string sv_file;
         std::string top_module;
+        std::string group;
         std::string out_dir;
         std::string style = "uvm";
         bool wrapper = false;
         bool no_parse = false; // skip verilator JSON parsing (offline mode)
+        bool force = false;
         int trace_level = 3;
     };
+
+    bool dir_has_files(const std::filesystem::path &dir)
+    {
+        if (!std::filesystem::exists(dir))
+            return false;
+        for (const auto &_ : std::filesystem::recursive_directory_iterator(dir))
+            return true;
+        return false;
+    }
 
     void generate_uvm_tb(const TbInitOptions &opts, const SvModule &mod, const std::filesystem::path &out)
     {
@@ -258,8 +270,29 @@ namespace
     {
         const auto proj_root = std::filesystem::current_path();
         const std::string tb_name = opts.top_module.empty() ? std::filesystem::path(opts.sv_file).stem().string() : opts.top_module;
+        const std::string subdir = opts.group.empty() ? tb_name : opts.group + "/" + tb_name;
 
-        const auto out = proj_root / opts.out_dir;
+        const bool has_cfg = std::filesystem::exists(proj_root / simforge::cli::kConfigFilename);
+        std::optional<simforge::cli::SimforgeConfig> cfg;
+        if (has_cfg)
+            cfg = simforge::cli::ConfigLoader::load(proj_root);
+
+        if (cfg && cfg->find_tb(subdir) && !opts.force)
+            throw std::runtime_error(
+                "Testbench '" + subdir +
+                "' is already registered in simforge.toml.\n"
+                "Use --force to regenerate it, or a different --top/--group."
+            );
+
+        const std::string tb_root = cfg ? cfg->paths.tb : "tb";
+        const auto out = opts.out_dir.empty() ? (proj_root / tb_root / subdir) : (proj_root / opts.out_dir);
+
+        if (dir_has_files(out) && !opts.force)
+            throw std::runtime_error(
+                "Output directory '" + out.string() +
+                "' already exists and is not empty.\n"
+                "Use --force to overwrite (this will clobber any hand-edited files in it)."
+            );
 
         // Parse SV module via verilator --json-only
         SvModule mod;
@@ -270,12 +303,9 @@ namespace
             {
                 // Load config for pkg/include dirs if simforge.toml exists
                 std::vector<std::filesystem::path> pkg_dirs;
-                if (std::filesystem::exists(proj_root / simforge::cli::kConfigFilename))
-                {
-                    auto cfg = simforge::cli::ConfigLoader::load(proj_root);
-                    for (const auto &p : cfg.paths.packages)
+                if (cfg)
+                    for (const auto &p : cfg->paths.packages)
                         pkg_dirs.push_back(proj_root / p);
-                }
 
                 mod = parse_sv_module(opts.sv_file, tb_name, pkg_dirs, {proj_root}, {"--sv"});
                 std::cout << "  Found " << mod.ports.size() << " ports on module '" << mod.name << "'\n";
@@ -299,20 +329,21 @@ namespace
             generate_uvm_tb(opts, mod, out);
 
         // Register TB in simforge.toml if present
-        if (std::filesystem::exists(proj_root / simforge::cli::kConfigFilename))
+        if (has_cfg)
         {
             TestbenchConfig tb_cfg;
             tb_cfg.name = tb_name;
+            tb_cfg.group = opts.group;
             tb_cfg.top = tb_name + (opts.wrapper ? "_dut" : "");
             tb_cfg.style = (opts.style == "basic") ? TbStyle::Basic : TbStyle::UVM;
             tb_cfg.verilator.trace_level = opts.trace_level;
 
-            simforge::cli::ConfigLoader::append_testbench(tb_cfg, proj_root);
-            std::cout << "\nOK: Registered '" << tb_name << "' in simforge.toml\n";
+            simforge::cli::ConfigLoader::upsert_testbench(tb_cfg, proj_root, opts.force);
+            std::cout << "\nOK: Registered '" << subdir << "' in simforge.toml\n";
         }
 
         std::cout << "\nDone. Next:\n"
-                  << "  simforge build " << tb_name << "\n";
+                  << "  simforge build " << subdir << "\n";
     }
 
 } // anonymous namespace
@@ -331,7 +362,9 @@ void register_tb_commands(CLI::App &app)
 
     tb_init->add_option("--top", opts->top_module, "Top module name (inferred from filename if omitted)");
 
-    tb_init->add_option("--out", opts->out_dir, "Output directory for generated files")->default_val("tb");
+    tb_init->add_option("--group", opts->group, "Namespace/category folder for this tb, e.g. 'mos6502' (mirrors rtl/<group>/)");
+
+    tb_init->add_option("--out", opts->out_dir, "Output directory (default: <tb_root>/<group>/<name>, computed from simforge.toml)");
 
     tb_init->add_option("--style", opts->style, "Testbench style: 'uvm' (default) or 'basic'")->check(CLI::IsMember({"uvm", "basic"}));
 
@@ -340,6 +373,8 @@ void register_tb_commands(CLI::App &app)
     tb_init->add_option("--trace-level", opts->trace_level, "Verilator trace depth (default: 3)")->default_val(3);
 
     tb_init->add_flag("--no-parse", opts->no_parse, "Skip verilator port parsing (useful offline)");
+
+    tb_init->add_flag("--force", opts->force, "Overwrite an already-registered testbench / existing generated files");
 
     tb_init->callback([opts]() { run(*opts); });
 }

@@ -17,6 +17,7 @@ namespace simforge::cli
     {
         std::string name;
         std::string top;
+        std::string group;
         TbStyle style = TbStyle::UVM;
 
         // if empty, infers from [paths] + name
@@ -26,19 +27,21 @@ namespace simforge::cli
         // Verilator overrides for this specific TB
         VerilatorConfig verilator;
 
+        std::string subdir() const { return group.empty() ? name : group + "/" + name; }
+
         std::string resolved_sv_top(const std::string &tb_root) const
         {
             if (!sv_top.empty())
                 return sv_top;
 
-            return tb_root + "/" + name + "/sv/" + top + ".sv";
+            return tb_root + "/" + subdir() + "/sv/" + top + ".sv";
         }
 
         std::string resolved_cpp(const std::string &tb_root) const
         {
             if (!cpp.empty())
                 return cpp;
-            return tb_root + "/" + name + "/" + name + "_tb.cpp";
+            return tb_root + "/" + subdir() + "/" + name + "_tb.cpp";
         }
 
         // Verilated class prefix

@@ -21,21 +21,45 @@ namespace simforge::cli
         ArtifactsConfig artifacts;
         std::vector<TestbenchConfig> testbenches;
 
-        const TestbenchConfig &get_tb(const std::string &name) const
+        std::optional<std::reference_wrapper<const TestbenchConfig>> find_tb(const std::string &query) const
         {
             for (const auto &tb : testbenches)
-                if (tb.name == name)
-                    return tb;
+                if (tb.subdir() == query)
+                    return std::cref(tb);
 
-            throw std::runtime_error("No testbench '" + name + "' found in simforge.toml");
+            std::vector<std::reference_wrapper<const TestbenchConfig>> matches;
+            for (const auto &tb : testbenches)
+                if (tb.name == query)
+                    matches.push_back(std::cref(tb));
+
+            if (matches.size() == 1)
+                return matches.front();
+
+            if (matches.size() > 1)
+            {
+                std::string list;
+                for (const auto &m : matches)
+                    list += "\n  - " + m.get().subdir();
+                throw std::runtime_error("Testbench name '" + query + "' is ambiguous across groups, qualify it:" + list);
+            }
+
+            return std::nullopt;
         }
 
-        std::optional<std::reference_wrapper<const TestbenchConfig>> find_tb(const std::string &name) const
+        const TestbenchConfig &get_tb(const std::string &query) const
         {
+            if (auto r = find_tb(query))
+                return r->get();
+            throw std::runtime_error("No testbench '" + query + "' found in simforge.toml");
+        }
+
+        std::vector<std::reference_wrapper<const TestbenchConfig>> in_group(const std::string &group) const
+        {
+            std::vector<std::reference_wrapper<const TestbenchConfig>> out;
             for (const auto &tb : testbenches)
-                if (tb.name == name)
-                    return std::cref(tb);
-            return std::nullopt;
+                if (tb.group == group)
+                    out.push_back(std::cref(tb));
+            return out;
         }
 
         VerilatorConfig effective_verilator(const std::string &tb_name) const { return verilator.merged_with(get_tb(tb_name).verilator); }
