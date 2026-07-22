@@ -1,5 +1,6 @@
 #include "commands/build.hpp"
 #include "commands/init.hpp"
+#include "commands/lint.hpp"
 #include "commands/list.hpp"
 #include "commands/run.hpp"
 #include "commands/tb_init.hpp"
@@ -24,6 +25,7 @@ int main(int argc, char *argv[])
     register_run_command(app);
     register_wave_command(app);
     register_list_command(app);
+    register_lint_command(app);
 
     // Parse
     try

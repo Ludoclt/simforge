@@ -49,6 +49,7 @@ target_sources(simforge
         src/commands/run.cpp
         src/commands/wave.cpp
         src/commands/list.cpp
+        src/commands/lint.cpp
 )
 
 target_include_directories(simforge
