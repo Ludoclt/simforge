@@ -28,10 +28,32 @@ namespace simforge::cli::utils
         std::string cpp_type() const;
     };
 
+    struct SvIfaceMember
+    {
+        std::string name;
+        PortDir dir = PortDir::Unknown;
+        int width = 1;
+        std::string raw_type;
+
+        bool is_header_port = false;
+
+        bool is_input() const { return dir == PortDir::Input; }
+        bool is_output() const { return dir == PortDir::Output; }
+    };
+
+    struct SvIfacePort
+    {
+        std::string port_name;
+        std::string iface_type;
+        std::string modport;
+        std::vector<SvIfaceMember> members;
+    };
+
     struct SvModule
     {
         std::string name;
         std::vector<SvPort> ports;
+        std::vector<SvIfacePort> iface_ports;
         std::string json_path;
 
         std::vector<SvPort> inputs() const;
@@ -48,5 +70,20 @@ namespace simforge::cli::utils
         const std::vector<std::filesystem::path> &include_dirs = {},
         const std::vector<std::string> &extra_args = {},
         const std::filesystem::path &work_dir = ""
+    );
+
+    struct SvTextScanResult
+    {
+        std::vector<SvPort> plain_ports;
+        std::vector<SvIfacePort> iface_ports;
+    };
+
+    SvTextScanResult scan_module_text(
+        const std::filesystem::path &sv_file,
+        const std::string &top_module,
+        const std::vector<std::filesystem::path> &search_dirs,
+        const std::vector<std::filesystem::path> &pkg_dirs = {},
+        const std::vector<std::filesystem::path> &include_dirs = {},
+        const std::vector<std::string> &extra_args = {}
     );
 } // namespace simforge::cli::utils

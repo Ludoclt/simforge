@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <iostream>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 
@@ -186,6 +188,359 @@ namespace simforge::cli::utils
             return mod;
         }
     } // anonymous namespace
+
+    namespace
+    {
+        // Strips // and /* */ comments
+        std::string strip_comments(const std::string &src)
+        {
+            std::string out;
+            out.reserve(src.size());
+            for (size_t i = 0; i < src.size(); ++i)
+            {
+                if (src[i] == '/' && i + 1 < src.size() && src[i + 1] == '/')
+                {
+                    while (i < src.size() && src[i] != '\n')
+                        ++i;
+                    out += '\n';
+                    continue;
+                }
+                if (src[i] == '/' && i + 1 < src.size() && src[i + 1] == '*')
+                {
+                    i += 2;
+                    while (i + 1 < src.size() && !(src[i] == '*' && src[i + 1] == '/'))
+                        ++i;
+                    ++i;
+                    out += ' ';
+                    continue;
+                }
+                out += src[i];
+            }
+            return out;
+        }
+
+        std::string read_file(const std::filesystem::path &path)
+        {
+            std::ifstream f(path);
+            if (!f)
+                throw std::runtime_error("Cannot open " + path.string());
+            std::ostringstream ss;
+            ss << f.rdbuf();
+            return strip_comments(ss.str());
+        }
+
+        std::string trim(const std::string &s)
+        {
+            size_t b = s.find_first_not_of(" \t\r\n");
+            if (b == std::string::npos)
+                return "";
+            size_t e = s.find_last_not_of(" \t\r\n");
+            return s.substr(b, e - b + 1);
+        }
+
+        std::string extract_parens(const std::string &text, size_t from)
+        {
+            size_t open = text.find('(', from);
+            if (open == std::string::npos)
+                return {};
+            int depth = 0;
+            size_t i = open;
+            for (; i < text.size(); ++i)
+            {
+                if (text[i] == '(')
+                    ++depth;
+                else if (text[i] == ')')
+                {
+                    --depth;
+                    if (depth == 0)
+                        break;
+                }
+            }
+            if (depth != 0)
+                return {};
+            return text.substr(open + 1, i - open - 1);
+        }
+
+        std::vector<std::string> split_top_level(const std::string &s, char sep = ',')
+        {
+            std::vector<std::string> out;
+            int depth = 0;
+            std::string cur;
+            for (char c : s)
+            {
+                if (c == '[' || c == '(')
+                    ++depth;
+                else if (c == ']' || c == ')')
+                    --depth;
+
+                if (c == sep && depth == 0)
+                {
+                    out.push_back(trim(cur));
+                    cur.clear();
+                }
+                else
+                {
+                    cur += c;
+                }
+            }
+            if (!trim(cur).empty())
+                out.push_back(trim(cur));
+            return out;
+        }
+
+        PortDir dir_from_keyword(const std::string &kw)
+        {
+            if (kw == "input")
+                return PortDir::Input;
+            if (kw == "output")
+                return PortDir::Output;
+            if (kw == "inout")
+                return PortDir::InOut;
+            return PortDir::Unknown;
+        }
+
+        bool is_basic_type_keyword(const std::string &tok)
+        {
+            static const std::vector<std::string> basics = {"logic", "wire", "reg", "bit", "integer", "byte", "signed", "unsigned"};
+            return std::find(basics.begin(), basics.end(), tok) != basics.end();
+        }
+
+        int width_from_range_tokens(const std::vector<std::string> &tokens)
+        {
+            static const std::regex range_re(R"(\[\s*(\d+)\s*:\s*(\d+)\s*\])");
+            for (const auto &t : tokens)
+            {
+                std::smatch m;
+                if (std::regex_search(t, m, range_re))
+                    return std::abs(std::stoi(m[1].str()) - std::stoi(m[2].str())) + 1;
+            }
+            return 0;
+        }
+
+        int probe_type_width(
+            const std::string &type_name,
+            const std::vector<std::filesystem::path> &pkg_dirs,
+            const std::vector<std::filesystem::path> &include_dirs,
+            const std::vector<std::string> &extra_args
+        )
+        {
+            try
+            {
+                const std::string probe_top = "__sf_wprobe_" + type_name + "__";
+                auto work_dir = std::filesystem::temp_directory_path() / ("simforge_wprobe_" + type_name);
+                std::filesystem::create_directories(work_dir);
+
+                auto probe_file = work_dir / "probe.sv";
+                {
+                    std::ofstream f(probe_file);
+                    f << "module " << probe_top << " (output " << type_name << " sf_probe_sig);\nendmodule\n";
+                }
+
+                SvModule probe_mod = parse_sv_module(probe_file, probe_top, pkg_dirs, include_dirs, extra_args, work_dir);
+                if (!probe_mod.ports.empty())
+                    return probe_mod.ports.front().width;
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "Warning: could not resolve width of type '" << type_name << "': " << e.what() << " (defaulting to 1 bit, fix manually if wrong)\n";
+            }
+            return 1;
+        }
+
+        std::filesystem::path find_interface_file(const std::string &iface_type, const std::vector<std::filesystem::path> &search_dirs)
+        {
+            std::regex decl_re(R"(\binterface\s+)" + iface_type + R"(\b)");
+            for (const auto &dir : search_dirs)
+            {
+                if (!std::filesystem::exists(dir))
+                    continue;
+                for (const auto &entry : std::filesystem::recursive_directory_iterator(dir))
+                {
+                    if (!entry.is_regular_file() || entry.path().extension() != ".sv")
+                        continue;
+                    std::ifstream f(entry.path());
+                    std::ostringstream ss;
+                    ss << f.rdbuf();
+                    if (std::regex_search(ss.str(), decl_re))
+                        return entry.path();
+                }
+            }
+            return {};
+        }
+
+        std::vector<SvIfaceMember> parse_modport_members(
+            const std::string &iface_body,
+            const std::string &modport_name,
+            const std::vector<std::filesystem::path> &pkg_dirs,
+            const std::vector<std::filesystem::path> &include_dirs,
+            const std::vector<std::string> &extra_args
+        )
+        {
+            std::vector<SvIfaceMember> members;
+
+            std::regex modport_kw_re(R"(\bmodport\s+)" + modport_name + R"(\s*)");
+            std::smatch m;
+            if (!std::regex_search(iface_body, m, modport_kw_re))
+                return members; // modport not found, caller warns
+
+            std::string list_body = extract_parens(iface_body, static_cast<size_t>(m.position(0)) + m.length(0));
+
+            std::string cur_dir = "input"; // SV requires an explicit direction before first use anyway
+            for (const auto &entry : split_top_level(list_body))
+            {
+                std::istringstream iss(entry);
+                std::string first;
+                iss >> first;
+                if (first.empty())
+                    continue;
+
+                std::string name;
+                if (first == "input" || first == "output" || first == "inout")
+                {
+                    cur_dir = first;
+                    if (!(iss >> name))
+                        continue; // malformed, skip
+                }
+                else
+                {
+                    name = first; // bare name continuing the previous direction
+                }
+
+                SvIfaceMember mem;
+                mem.name = name;
+                mem.dir = dir_from_keyword(cur_dir);
+
+                std::regex decl_re(R"((\w+)\s*(\[\s*\d+\s*:\s*\d+\s*\])?\s*)" + name + R"(\s*;)");
+                std::smatch dm;
+                if (std::regex_search(iface_body, dm, decl_re))
+                {
+                    std::string type_tok = dm[1].str();
+                    mem.raw_type = type_tok + (dm[2].matched ? " " + dm[2].str() : "");
+                    if (is_basic_type_keyword(type_tok))
+                        mem.width = dm[2].matched ? width_from_range_tokens({dm[2].str()}) : 1;
+                    else
+                        mem.width = probe_type_width(type_tok, pkg_dirs, include_dirs, extra_args);
+                }
+                else
+                {
+                    mem.width = 1;
+                    mem.is_header_port = true;
+                }
+
+                members.push_back(mem);
+            }
+
+            return members;
+        }
+    } // anonymous namespace
+
+    SvTextScanResult scan_module_text(
+        const std::filesystem::path &sv_file,
+        const std::string &top_module,
+        const std::vector<std::filesystem::path> &search_dirs,
+        const std::vector<std::filesystem::path> &pkg_dirs,
+        const std::vector<std::filesystem::path> &include_dirs,
+        const std::vector<std::string> &extra_args
+    )
+    {
+        SvTextScanResult result;
+
+        std::string src = read_file(sv_file);
+
+        std::regex mod_re(R"(\bmodule\s+)" + top_module + R"(\b)");
+        std::smatch mm;
+        if (!std::regex_search(src, mm, mod_re))
+            throw std::runtime_error("Could not find 'module " + top_module + "' in " + sv_file.string());
+
+        std::string portlist = extract_parens(src, static_cast<size_t>(mm.position(0)) + mm.length(0));
+
+        for (const auto &entry : split_top_level(portlist))
+        {
+            std::istringstream iss(entry);
+            std::string first;
+            iss >> first;
+            if (first.empty())
+                continue;
+
+            if (first == "input" || first == "output" || first == "inout")
+            {
+                std::vector<std::string> tokens;
+                std::string tok;
+                while (iss >> tok)
+                    tokens.push_back(tok);
+                if (tokens.empty())
+                    continue; // malformed
+
+                SvPort port;
+                port.name = tokens.back();
+                port.dir = dir_from_keyword(first);
+                tokens.pop_back();
+
+                int range_width = width_from_range_tokens(tokens);
+                if (range_width > 0)
+                {
+                    port.width = range_width;
+                    port.raw_type = tokens.empty() ? "logic" : tokens.front();
+                }
+                else if (tokens.empty() || is_basic_type_keyword(tokens.front()))
+                {
+                    port.width = 1;
+                    port.raw_type = tokens.empty() ? "logic" : tokens.front();
+                }
+                else
+                {
+                    // named custom type on a plain port
+                    port.raw_type = tokens.front();
+                    port.width = probe_type_width(tokens.front(), pkg_dirs, include_dirs, extra_args);
+                }
+                port.is_packed = port.width > 1;
+
+                result.plain_ports.push_back(port);
+            }
+            else
+            {
+                std::istringstream iss2(entry);
+                std::string iface_and_modport, port_name;
+                iss2 >> iface_and_modport >> port_name;
+                if (port_name.empty())
+                    continue; // not actually a port entry
+
+                SvIfacePort ifp;
+                auto dot = iface_and_modport.find('.');
+                if (dot != std::string::npos)
+                {
+                    ifp.iface_type = iface_and_modport.substr(0, dot);
+                    ifp.modport = iface_and_modport.substr(dot + 1);
+                }
+                else
+                {
+                    ifp.iface_type = iface_and_modport;
+                }
+                ifp.port_name = port_name;
+
+                auto iface_file = find_interface_file(ifp.iface_type, search_dirs);
+                if (iface_file.empty())
+                {
+                    std::cerr << "Warning: could not locate interface '" << ifp.iface_type << "' (port '" << ifp.port_name << "') under any search dir - leaving its members empty, wire it by hand.\n";
+                }
+                else if (ifp.modport.empty())
+                {
+                    std::cerr << "Warning: port '" << ifp.port_name << "' of interface '" << ifp.iface_type << "' has no modport - cannot determine per-signal direction, leaving members empty.\n";
+                }
+                else
+                {
+                    std::string iface_body = read_file(iface_file);
+                    ifp.members = parse_modport_members(iface_body, ifp.modport, pkg_dirs, include_dirs, extra_args);
+                    if (ifp.members.empty())
+                        std::cerr << "Warning: modport '" << ifp.modport << "' not found in " << iface_file.string() << "\n";
+                }
+
+                result.iface_ports.push_back(ifp);
+            }
+        }
+
+        return result;
+    }
 
     SvModule parse_sv_module(
         const std::filesystem::path &sv_file,

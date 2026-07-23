@@ -13,13 +13,21 @@ module {{TOP_MODULE}} (
 {{SV_PORT_LIST}}
 );
 
-  // Internal registered signals
+  // Internal registered/raw signals
 {{SV_INTERNAL_REGS}}
+
+  // Interface instances (flattened at this wrapper's boundary; Verilator cannot elaborate
+  // a module with an interface port as a lone top, so the real DUT keeps its interface
+  // ports and only this wrapper's *own* ports are plain logic)
+{{SV_IFACE_INSTANCES}}
 
   // DUT instantiation
   {{MODULE}} u_{{MODULE}} (
 {{SV_PORT_CONNECTIONS}}
   );
+
+  // Drive interface members that aren't part of the interface's own header port list
+{{SV_IFACE_BINDINGS}}
 
   // Input register stage
   always_ff @(posedge clk or negedge rst_n) begin

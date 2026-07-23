@@ -45,6 +45,57 @@ namespace
         return out;
     }
 
+    bool name_looks_like_clk(const std::string &n)
+    {
+        std::string l = n;
+        std::transform(l.begin(), l.end(), l.begin(), ::tolower);
+        return l.find("clk") != std::string::npos || l == "ck" || l.find("clock") != std::string::npos;
+    }
+
+    bool name_looks_like_rst(const std::string &n)
+    {
+        std::string l = n;
+        std::transform(l.begin(), l.end(), l.begin(), ::tolower);
+        return l.find("rst") != std::string::npos || l.find("reset") != std::string::npos;
+    }
+
+    // one interface member flattened
+    struct IfaceFlat
+    {
+        SvPort port;
+        std::string iface_port;
+        std::string member;
+        bool is_header_port = false;
+        bool is_clk_alias = false;
+        bool is_rst_alias = false;
+    };
+
+    std::vector<IfaceFlat> flatten_iface_members(const std::vector<SvIfacePort> &iface_ports)
+    {
+        std::vector<IfaceFlat> out;
+        for (const auto &ip : iface_ports)
+        {
+            for (const auto &m : ip.members)
+            {
+                IfaceFlat f;
+                f.iface_port = ip.port_name;
+                f.member = m.name;
+                f.is_header_port = m.is_header_port;
+                f.is_clk_alias = m.is_header_port && name_looks_like_clk(m.name);
+                f.is_rst_alias = m.is_header_port && name_looks_like_rst(m.name);
+
+                f.port.name = ip.port_name + "_" + m.name;
+                f.port.dir = m.dir;
+                f.port.width = m.width;
+                f.port.is_packed = m.width > 1;
+                f.port.raw_type = m.raw_type;
+
+                out.push_back(f);
+            }
+        }
+        return out;
+    }
+
     // VIF field generation
 
     std::string build_vif_input_fields(const std::vector<SvPort> &inputs)
@@ -96,7 +147,7 @@ namespace
         return oss.str();
     }
 
-    std::string build_sv_internal_regs(const std::vector<SvPort> &inputs)
+    std::string build_sv_internal_regs(const std::vector<SvPort> &inputs, const std::vector<SvPort> &outputs)
     {
         std::ostringstream oss;
         for (const auto &p : inputs)
@@ -104,36 +155,110 @@ namespace
             std::string bits = p.width > 1 ? "[" + std::to_string(p.width - 1) + ":0] " : "";
             oss << "  logic " << bits << p.name << "_r;\n";
         }
-        return oss.str();
-    }
-
-    std::string build_sv_port_connections(const std::vector<SvPort> &ports)
-    {
-        std::ostringstream oss;
-        for (size_t i = 0; i < ports.size(); ++i)
+        for (const auto &p : outputs)
         {
-            oss << "      ." << ports[i].name << "(" << ports[i].name << (ports[i].is_input() ? "_r" : "_w") << ")";
-            if (i + 1 < ports.size())
-                oss << ",";
-            oss << "\n";
+            std::string bits = p.width > 1 ? "[" + std::to_string(p.width - 1) + ":0] " : "";
+            oss << "  logic " << bits << p.name << "_w;\n";
         }
         return oss.str();
     }
 
-    std::string build_sv_reset_block(const std::vector<SvPort> &inputs)
+    std::string build_sv_dut_connections(
+        const std::vector<SvPort> &plain_ports,
+        const std::vector<SvIfacePort> &iface_ports,
+        const std::string &clk_port_name,
+        const std::string &rst_port_name,
+        bool has_own_clk,
+        bool has_own_rst
+    )
     {
+        std::vector<std::string> lines;
+        if (has_own_clk)
+            lines.push_back("." + clk_port_name + "(clk)");
+        if (has_own_rst)
+            lines.push_back("." + rst_port_name + "(rst_n)");
+        for (const auto &p : plain_ports)
+            lines.push_back("." + p.name + "(" + p.name + (p.is_input() ? "_r" : "_w") + ")");
+        for (const auto &ip : iface_ports)
+            lines.push_back("." + ip.port_name + "(" + ip.port_name + "_if." + (ip.modport.empty() ? "/*TODO: modport*/" : ip.modport) + ")");
+
         std::ostringstream oss;
-        for (const auto &p : inputs)
-            oss << "      " << p.name << "_r <= '0;\n";
+        for (size_t i = 0; i < lines.size(); ++i)
+            oss << "      " << lines[i] << (i + 1 < lines.size() ? "," : "") << "\n";
         return oss.str();
     }
 
-    std::string build_sv_reg_block(const std::vector<SvPort> &inputs)
+    std::string build_sv_iface_instances(const std::vector<SvIfacePort> &iface_ports, const std::vector<IfaceFlat> &flats)
     {
         std::ostringstream oss;
-        for (const auto &p : inputs)
-            oss << "      " << p.name << "_r <= " << p.name << ";\n";
+        for (const auto &ip : iface_ports)
+        {
+            std::vector<std::string> conns;
+            for (const auto &f : flats)
+            {
+                if (f.iface_port != ip.port_name || !f.is_header_port)
+                    continue;
+                std::string target;
+                if (f.is_clk_alias)
+                    target = "clk";
+                else if (f.is_rst_alias)
+                    target = "rst_n";
+                else
+                    target = f.port.name + (f.port.is_input() ? "_r" : "_w");
+                conns.push_back("." + f.member + "(" + target + ")");
+            }
+
+            oss << "  " << ip.iface_type << " " << ip.port_name << "_if (\n";
+            for (size_t i = 0; i < conns.size(); ++i)
+                oss << "      " << conns[i] << (i + 1 < conns.size() ? "," : "") << "\n";
+            oss << "  );\n";
+        }
         return oss.str();
+    }
+
+    std::string build_sv_iface_bindings(const std::vector<IfaceFlat> &flats)
+    {
+        std::ostringstream oss;
+        for (const auto &f : flats)
+        {
+            if (f.is_header_port || !f.port.is_input())
+                continue;
+            oss << "  assign " << f.iface_port << "_if." << f.member << " = " << f.port.name << "_r;\n";
+        }
+        return oss.str();
+    }
+
+    struct RegLine
+    {
+        std::string target;
+        std::string clocked_source;
+    };
+
+    std::string build_reg_block(const std::vector<RegLine> &lines, bool reset_phase)
+    {
+        std::ostringstream oss;
+        for (const auto &l : lines)
+            oss << "      " << l.target << " <= " << (reset_phase ? "'0" : l.clocked_source) << ";\n";
+        return oss.str();
+    }
+
+    std::vector<RegLine> build_in_reg_lines(const std::vector<SvPort> &inputs)
+    {
+        std::vector<RegLine> out;
+        for (const auto &p : inputs)
+            out.push_back({p.name + "_r", p.name});
+        return out;
+    }
+
+    std::vector<RegLine> build_out_reg_lines(const std::vector<SvPort> &plain_outputs, const std::vector<IfaceFlat> &flats)
+    {
+        std::vector<RegLine> out;
+        for (const auto &p : plain_outputs)
+            out.push_back({p.name, p.name + "_w"});
+        for (const auto &f : flats)
+            if (!f.is_header_port && f.port.is_output())
+                out.push_back({f.port.name, f.iface_port + "_if." + f.member});
+        return out;
     }
 
     // TB generation
@@ -168,18 +293,35 @@ namespace
         const std::string dut = opts.top_module + (opts.wrapper ? "_dut" : "");
         const std::string dutc = "V" + dut;
 
-        const std::string clk = mod.guess_clk_signal().empty() ? "clk" : mod.guess_clk_signal();
-        const std::string rst = mod.guess_rst_signal().empty() ? "rst_n" : mod.guess_rst_signal();
+        const std::string found_clk = mod.guess_clk_signal();
+        const std::string found_rst = mod.guess_rst_signal();
+        const std::string clk = found_clk.empty() ? "clk" : found_clk;
+        const std::string rst = found_rst.empty() ? "rst_n" : found_rst;
 
-        // Filter out clk/rst from VIF
-        std::vector<SvPort> vif_ports;
+        // Plain module ports, excluding clk/rst
+        std::vector<SvPort> plain_ports;
         for (const auto &p : mod.ports)
             if (p.name != clk && p.name != rst)
-                vif_ports.push_back(p);
+                plain_ports.push_back(p);
 
-        std::vector<SvPort> vif_inputs, vif_outputs;
-        for (const auto &p : vif_ports)
-            (p.is_input() ? vif_inputs : vif_outputs).push_back(p);
+        auto iface_flats = flatten_iface_members(mod.iface_ports);
+
+        std::vector<SvPort> io_ports = plain_ports;
+        for (const auto &f : iface_flats)
+            if (!f.is_clk_alias && !f.is_rst_alias)
+                io_ports.push_back(f.port);
+
+        std::vector<SvPort> io_inputs, io_outputs;
+        for (const auto &p : io_ports)
+            (p.is_input() ? io_inputs : io_outputs).push_back(p);
+
+        std::vector<SvPort> w_outputs;
+        for (const auto &p : plain_ports)
+            if (p.is_output())
+                w_outputs.push_back(p);
+        for (const auto &f : iface_flats)
+            if (f.is_header_port && !f.is_clk_alias && !f.is_rst_alias && f.port.is_output())
+                w_outputs.push_back(f.port);
 
         TemplateContext ctx = {
             {"MODULE", M},
@@ -190,9 +332,9 @@ namespace
             {"CLK_SIGNAL", clk},
             {"RST_SIGNAL", rst},
             {"TRACE_LEVEL", std::to_string(opts.trace_level)},
-            {"VIF_INPUT_FIELDS", build_vif_input_fields(vif_inputs)},
-            {"VIF_OUTPUT_FIELDS", build_vif_output_fields(vif_outputs)},
-            {"VIF_CTOR_INIT", build_vif_ctor_init(vif_ports, "DUT")},
+            {"VIF_INPUT_FIELDS", build_vif_input_fields(io_inputs)},
+            {"VIF_OUTPUT_FIELDS", build_vif_output_fields(io_outputs)},
+            {"VIF_CTOR_INIT", build_vif_ctor_init(io_ports, "DUT")},
         };
 
         auto emit = [&](std::string_view tmpl, const std::filesystem::path &rel)
@@ -202,6 +344,14 @@ namespace
         };
 
         std::cout << "\nGenerating UVM testbench for '" << M << "'...\n";
+        if (!mod.iface_ports.empty())
+        {
+            std::cout << "  Found " << mod.iface_ports.size() << " interface port(s): ";
+            for (size_t i = 0; i < mod.iface_ports.size(); ++i)
+                std::cout << (i ? ", " : "") << mod.iface_ports[i].port_name << ":" << mod.iface_ports[i].iface_type << (mod.iface_ports[i].modport.empty() ? "" : ("." + mod.iface_ports[i].modport));
+            std::cout << " (flattened to " << io_ports.size() - plain_ports.size() << " signal(s) — verify widths on any"
+                      << " package-typed member, see warnings above)\n";
+        }
 
         emit(tmpl::uvm::defs_hpp, M + "_defs.hpp");
         emit(tmpl::uvm::data_hpp, M + "_data.hpp");
@@ -218,20 +368,23 @@ namespace
 
         if (opts.wrapper)
         {
-            // Build SV wrapper context additions
-            std::vector<SvPort> rtl_ports;
-            for (const auto &p : mod.ports)
-                if (p.name != clk && p.name != rst)
-                    rtl_ports.push_back(p);
-
             ctx["SV_PACKAGE_IMPORTS"] = "// TODO: import packages if needed\n// import my_pkg::*;";
-            ctx["SV_PORT_LIST"] = build_sv_port_list(rtl_ports);
-            ctx["SV_INTERNAL_REGS"] = build_sv_internal_regs(vif_inputs);
-            ctx["SV_PORT_CONNECTIONS"] = build_sv_port_connections(rtl_ports);
-            ctx["SV_RESET_BLOCK"] = build_sv_reset_block(vif_inputs);
-            ctx["SV_REG_BLOCK"] = build_sv_reg_block(vif_inputs);
-            ctx["SV_OUT_RESET_BLOCK"] = "      // TODO";
-            ctx["SV_OUT_REG_BLOCK"] = "      // TODO";
+            ctx["SV_PORT_LIST"] = build_sv_port_list(io_ports);
+            ctx["SV_INTERNAL_REGS"] = build_sv_internal_regs(io_inputs, w_outputs);
+            ctx["SV_IFACE_INSTANCES"] = build_sv_iface_instances(mod.iface_ports, iface_flats);
+            ctx["SV_PORT_CONNECTIONS"] = build_sv_dut_connections(plain_ports, mod.iface_ports, clk, rst, !found_clk.empty(), !found_rst.empty());
+            ctx["SV_IFACE_BINDINGS"] = build_sv_iface_bindings(iface_flats);
+            ctx["SV_RESET_BLOCK"] = build_reg_block(build_in_reg_lines(io_inputs), /*reset_phase=*/true);
+            ctx["SV_REG_BLOCK"] = build_reg_block(build_in_reg_lines(io_inputs), /*reset_phase=*/false);
+
+            auto out_lines = build_out_reg_lines(w_outputs, iface_flats);
+            ctx["SV_OUT_RESET_BLOCK"] = build_reg_block(out_lines, /*reset_phase=*/true);
+            ctx["SV_OUT_REG_BLOCK"] = build_reg_block(out_lines, /*reset_phase=*/false);
+
+            if (mod.iface_ports.empty())
+                ctx["SV_IFACE_INSTANCES"] = "  // (no interface ports on this module)";
+            if (iface_flats.empty())
+                ctx["SV_IFACE_BINDINGS"] = "  // (no interface body signals to drive)";
 
             emit(tmpl::uvm::sv::dut_wrapper_sv, "sv/" + dut + ".sv");
         }
@@ -296,30 +449,44 @@ namespace
 
         // Parse SV module via verilator --json-only
         SvModule mod;
-        if (!opts.no_parse && !opts.wrapper)
+        mod.name = tb_name;
+
+        if (!opts.no_parse)
         {
+            std::vector<std::filesystem::path> pkg_dirs;
+            if (cfg)
+                for (const auto &p : cfg->paths.packages)
+                    pkg_dirs.push_back(proj_root / p);
+
+            bool json_ok = false;
             std::cout << "Parsing '" << opts.sv_file << "' with verilator...\n";
             try
             {
-                // Load config for pkg/include dirs if simforge.toml exists
-                std::vector<std::filesystem::path> pkg_dirs;
-                if (cfg)
-                    for (const auto &p : cfg->paths.packages)
-                        pkg_dirs.push_back(proj_root / p);
-
                 mod = parse_sv_module(opts.sv_file, tb_name, pkg_dirs, {proj_root}, {"--sv"});
-                std::cout << "  Found " << mod.ports.size() << " ports on module '" << mod.name << "'\n";
+                json_ok = true;
+                std::cout << "  Found " << mod.ports.size() << " plain port(s) on module '" << mod.name << "'\n";
             }
             catch (const std::exception &e)
             {
-                std::cerr << "Warning: port parsing failed: " << e.what() << "\n"
-                          << "         Generating placeholder VIF. Edit manually.\n";
+                std::cerr << "Warning: verilator port parsing failed: " << e.what() << "\n"
+                          << "         Falling back to a text-based port scan (widths from named/package "
+                             "types won't be as reliable - this is expected if the module has an interface "
+                             "port, which verilator can't elaborate as a lone top).\n";
                 mod.name = tb_name;
             }
-        }
-        else
-        {
-            mod.name = tb_name;
+
+            try
+            {
+                auto scan = scan_module_text(opts.sv_file, tb_name, {proj_root}, pkg_dirs, {proj_root}, {"--sv"});
+                mod.iface_ports = scan.iface_ports;
+                if (!json_ok)
+                    mod.ports = scan.plain_ports;
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "Warning: interface-port text scan failed: " << e.what() << "\n"
+                          << "         Generating placeholder VIF. Edit manually.\n";
+            }
         }
 
         // Generate files
