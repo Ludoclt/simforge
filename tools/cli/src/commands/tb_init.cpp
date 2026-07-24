@@ -343,6 +343,19 @@ namespace
         return false;
     }
 
+    void make_editable(const std::filesystem::path &path)
+    {
+        std::error_code ec;
+        std::filesystem::permissions(
+            path,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::group_read | std::filesystem::perms::group_write | std::filesystem::perms::others_read |
+                std::filesystem::perms::others_write,
+            std::filesystem::perm_options::add,
+            ec
+        );
+        // a failure here
+    }
+
     void generate_uvm_tb(const TbInitOptions &opts, const SvModule &mod, const std::filesystem::path &out)
     {
         const std::string M = mod.name;
@@ -400,6 +413,7 @@ namespace
         auto emit = [&](std::string_view tmpl, const std::filesystem::path &rel)
         {
             TemplateEngine::render_string_to_file(tmpl, out / rel, ctx);
+            make_editable(out / rel);
             std::cout << "  -> " << (out / rel).string() << "\n";
         };
 
@@ -470,6 +484,7 @@ namespace
         auto emit = [&](std::string_view tmpl, const std::string &name)
         {
             TemplateEngine::render_string_to_file(tmpl, out / name, ctx);
+            make_editable(out / name);
             std::cout << "  -> " << (out / name).string() << "\n";
         };
 

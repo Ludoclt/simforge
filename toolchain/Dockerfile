@@ -36,6 +36,15 @@ RUN git clone --depth=1 --branch $VERILATOR_VERSION \
     && make install \
     && rm -rf /tmp/verilator
 
+# --- Non-root user matching the host UID/GID ---
+ARG USER_UID=1000
+ARG USER_GID=1000
+RUN groupadd --gid "$USER_GID" dev \
+    && useradd --uid "$USER_UID" --gid "$USER_GID" --create-home --shell /bin/bash dev \
+    && apt-get update && apt-get install -y sudo \
+    && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # --- Workspace ---
 WORKDIR /workspace
 
@@ -50,6 +59,11 @@ RUN cmake -S . -B build -G Ninja \
 
 RUN ln -s /workspace/build/tools/cli/simforge /usr/local/bin/simforge
 
+RUN chown -R dev:dev /workspace
+
 ENV GTK_THEME=Adwaita:dark
+
+USER dev
+WORKDIR /project
 
 CMD ["/bin/bash"]

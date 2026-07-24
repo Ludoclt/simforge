@@ -35,6 +35,8 @@ echo ""
 
 docker build \
     --tag "$IMAGE_NAME" \
+    --build-arg USER_UID="$(id -u)" \
+    --build-arg USER_GID="$(id -g)" \
     --file "$SIMFORGE_TOOLCHAIN_DIR/Dockerfile" \
     "$SIMFORGE_TOOLCHAIN_DIR/.."
 
