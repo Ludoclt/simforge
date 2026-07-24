@@ -348,7 +348,7 @@ namespace
         const std::string M = mod.name;
         const std::string MP = to_pascal(M);
         const std::string MU = to_upper(M);
-        const std::string dut = opts.top_module + (opts.wrapper ? "_dut" : "");
+        const std::string dut = M + (opts.wrapper ? "_dut" : "");
         const std::string dutc = "V" + dut;
 
         const std::string found_clk = mod.guess_clk_signal();
@@ -460,7 +460,7 @@ namespace
             {"MODULE", M},
             {"MODULE_UPPER", to_upper(M)},
             {"MODULE_PASCAL", to_pascal(M)},
-            {"DUT_CLASS", "V" + opts.top_module + (opts.wrapper ? "_dut" : "")},
+            {"DUT_CLASS", "V" + M + (opts.wrapper ? "_dut" : "")},
             {"CLK_SIGNAL", clk},
             {"RST_SIGNAL", rst},
         };

@@ -536,9 +536,28 @@ namespace simforge::cli::utils
                 auto work_dir = std::filesystem::temp_directory_path() / ("simforge_wprobe_" + type_name);
                 std::filesystem::create_directories(work_dir);
 
+                // imports
+                std::vector<std::string> pkg_names;
+                std::regex pkg_re(R"(\bpackage\s+(\w+)\s*;)");
+                for (const auto &dir : pkg_dirs)
+                {
+                    if (!std::filesystem::exists(dir))
+                        continue;
+                    for (const auto &entry : std::filesystem::directory_iterator(dir))
+                    {
+                        if (!entry.is_regular_file() || entry.path().extension() != ".sv")
+                            continue;
+                        std::string body = read_file(entry.path());
+                        for (auto it = std::sregex_iterator(body.begin(), body.end(), pkg_re); it != std::sregex_iterator(); ++it)
+                            pkg_names.push_back((*it)[1].str());
+                    }
+                }
+
                 auto probe_file = work_dir / "probe.sv";
                 {
                     std::ofstream f(probe_file);
+                    for (const auto &pn : pkg_names)
+                        f << "import " << pn << "::*;\n";
                     f << "module " << probe_top << " (output " << type_name << " sf_probe_sig);\nendmodule\n";
                 }
 
