@@ -10,6 +10,7 @@
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace simforge::cli::utils
 {
@@ -238,7 +239,7 @@ namespace simforge::cli::utils
             return s.substr(b, e - b + 1);
         }
 
-        std::string extract_parens(const std::string &text, size_t from)
+        std::string extract_parens(const std::string &text, size_t from, size_t *end_pos = nullptr)
         {
             size_t open = text.find('(', from);
             if (open == std::string::npos)
@@ -258,6 +259,8 @@ namespace simforge::cli::utils
             }
             if (depth != 0)
                 return {};
+            if (end_pos)
+                *end_pos = i;
             return text.substr(open + 1, i - open - 1);
         }
 
@@ -305,16 +308,219 @@ namespace simforge::cli::utils
             return std::find(basics.begin(), basics.end(), tok) != basics.end();
         }
 
-        int width_from_range_tokens(const std::vector<std::string> &tokens)
+        // Minimal recursive-descent evaluator for the arithmetic SystemVerilog uses in parameter
+        class ExprEval
         {
-            static const std::regex range_re(R"(\[\s*(\d+)\s*:\s*(\d+)\s*\])");
+          public:
+            ExprEval(const std::string &s, const std::unordered_map<std::string, long> &params) : s_(s), params_(params) {}
+
+            long run()
+            {
+                long v = parse_expr();
+                skip_ws();
+                if (pos_ != s_.size())
+                    throw std::runtime_error("trailing characters in expression: " + s_);
+                return v;
+            }
+
+          private:
+            const std::string &s_;
+            const std::unordered_map<std::string, long> &params_;
+            size_t pos_ = 0;
+
+            void skip_ws()
+            {
+                while (pos_ < s_.size() && std::isspace(static_cast<unsigned char>(s_[pos_])))
+                    ++pos_;
+            }
+
+            char peek()
+            {
+                skip_ws();
+                return pos_ < s_.size() ? s_[pos_] : '\0';
+            }
+
+            long parse_expr() // + -
+            {
+                long v = parse_term();
+                for (;;)
+                {
+                    char c = peek();
+                    if (c == '+')
+                    {
+                        ++pos_;
+                        v += parse_term();
+                    }
+                    else if (c == '-')
+                    {
+                        ++pos_;
+                        v -= parse_term();
+                    }
+                    else
+                        break;
+                }
+                return v;
+            }
+
+            long parse_term() // * /
+            {
+                long v = parse_unary();
+                for (;;)
+                {
+                    char c = peek();
+                    if (c == '*')
+                    {
+                        ++pos_;
+                        v *= parse_unary();
+                    }
+                    else if (c == '/')
+                    {
+                        ++pos_;
+                        long d = parse_unary();
+                        if (d == 0)
+                            throw std::runtime_error("division by zero in expression: " + s_);
+                        v /= d;
+                    }
+                    else
+                        break;
+                }
+                return v;
+            }
+
+            long parse_unary()
+            {
+                if (peek() == '-')
+                {
+                    ++pos_;
+                    return -parse_unary();
+                }
+                if (peek() == '+')
+                {
+                    ++pos_;
+                    return parse_unary();
+                }
+                return parse_primary();
+            }
+
+            long parse_primary()
+            {
+                skip_ws();
+                if (peek() == '(')
+                {
+                    ++pos_;
+                    long v = parse_expr();
+                    if (peek() != ')')
+                        throw std::runtime_error("unbalanced parens in expression: " + s_);
+                    ++pos_;
+                    return v;
+                }
+
+                size_t start = pos_;
+                if (std::isdigit(static_cast<unsigned char>(peek())))
+                {
+                    while (pos_ < s_.size() && std::isdigit(static_cast<unsigned char>(s_[pos_])))
+                        ++pos_;
+
+                    // Based literal: <size>'<base><digits>, e.g. 8'd10, 4'hF, 1'b1.
+                    if (pos_ < s_.size() && s_[pos_] == '\'')
+                    {
+                        ++pos_; // consume '
+                        if (pos_ >= s_.size())
+                            throw std::runtime_error("truncated based literal: " + s_);
+                        char base = static_cast<char>(std::tolower(static_cast<unsigned char>(s_[pos_])));
+                        ++pos_;
+                        size_t digits_start = pos_;
+                        while (pos_ < s_.size() && (std::isalnum(static_cast<unsigned char>(s_[pos_])) || s_[pos_] == '_'))
+                            ++pos_;
+                        std::string digits = s_.substr(digits_start, pos_ - digits_start);
+                        digits.erase(std::remove(digits.begin(), digits.end(), '_'), digits.end());
+                        int radix = (base == 'b') ? 2 : (base == 'o') ? 8 : (base == 'h') ? 16 : 10;
+                        return digits.empty() ? 0 : std::stol(digits, nullptr, radix);
+                    }
+
+                    return std::stol(s_.substr(start, pos_ - start));
+                }
+
+                if (std::isalpha(static_cast<unsigned char>(peek())) || peek() == '_')
+                {
+                    while (pos_ < s_.size() && (std::isalnum(static_cast<unsigned char>(s_[pos_])) || s_[pos_] == '_'))
+                        ++pos_;
+                    std::string ident = s_.substr(start, pos_ - start);
+                    auto it = params_.find(ident);
+                    if (it == params_.end())
+                        throw std::runtime_error("unresolved identifier '" + ident + "' in expression: " + s_);
+                    return it->second;
+                }
+
+                throw std::runtime_error("unexpected character in expression: " + s_);
+            }
+        };
+
+        long eval_expr(const std::string &expr, const std::unordered_map<std::string, long> &params)
+        {
+            return ExprEval(expr, params).run();
+        }
+
+        int width_from_range_tokens(const std::vector<std::string> &tokens, const std::unordered_map<std::string, long> &params = {})
+        {
+            static const std::regex range_re(R"(\[\s*([^\]:]+)\s*:\s*([^\]]+)\s*\])");
             for (const auto &t : tokens)
             {
                 std::smatch m;
                 if (std::regex_search(t, m, range_re))
-                    return std::abs(std::stoi(m[1].str()) - std::stoi(m[2].str())) + 1;
+                {
+                    try
+                    {
+                        long hi = eval_expr(trim(m[1].str()), params);
+                        long lo = eval_expr(trim(m[2].str()), params);
+                        return static_cast<int>(std::abs(hi - lo) + 1);
+                    }
+                    catch (const std::exception &)
+                    {
+                        return 0; // unresolved - let the caller decide the default
+                    }
+                }
             }
             return 0;
+        }
+
+        std::vector<SvParam> parse_module_params(const std::string &param_body)
+        {
+            std::vector<SvParam> out;
+            std::unordered_map<std::string, long> known;
+
+            for (const auto &entry : split_top_level(param_body))
+            {
+                auto eq = entry.find('=');
+                std::string lhs = trim(eq == std::string::npos ? entry : entry.substr(0, eq));
+                std::string rhs = eq == std::string::npos ? "" : trim(entry.substr(eq + 1));
+
+                std::istringstream iss(lhs);
+                std::string tok, name;
+                while (iss >> tok)
+                    name = tok;
+                if (name.empty())
+                    continue;
+
+                SvParam p;
+                p.name = name;
+                p.raw_default = rhs;
+                if (!rhs.empty())
+                {
+                    try
+                    {
+                        p.value = eval_expr(rhs, known);
+                        p.resolved = true;
+                        known[name] = p.value;
+                    }
+                    catch (const std::exception &)
+                    {
+                        // leave unresolved
+                    }
+                }
+                out.push_back(p);
+            }
+            return out;
         }
 
         int probe_type_width(
@@ -554,7 +760,24 @@ namespace simforge::cli::utils
         if (!std::regex_search(src, mm, mod_re))
             throw std::runtime_error("Could not find 'module " + top_module + "' in " + sv_file.string());
 
-        std::string portlist = extract_parens(src, static_cast<size_t>(mm.position(0)) + mm.length(0));
+        size_t after_name = static_cast<size_t>(mm.position(0)) + mm.length(0);
+        size_t scan_pos = after_name;
+        while (scan_pos < src.size() && std::isspace(static_cast<unsigned char>(src[scan_pos])))
+            ++scan_pos;
+
+        std::unordered_map<std::string, long> param_values;
+        if (scan_pos < src.size() && src[scan_pos] == '#')
+        {
+            size_t param_end = 0;
+            std::string param_body = extract_parens(src, scan_pos, &param_end);
+            result.params = parse_module_params(param_body);
+            for (const auto &p : result.params)
+                if (p.resolved)
+                    param_values[p.name] = p.value;
+            after_name = param_end + 1;
+        }
+
+        std::string portlist = extract_parens(src, after_name);
 
         for (const auto &entry : split_top_level(portlist))
         {
@@ -578,7 +801,7 @@ namespace simforge::cli::utils
                 port.dir = dir_from_keyword(first);
                 tokens.pop_back();
 
-                int range_width = width_from_range_tokens(tokens);
+                int range_width = width_from_range_tokens(tokens, param_values);
                 if (range_width > 0)
                 {
                     port.width = range_width;
@@ -623,11 +846,11 @@ namespace simforge::cli::utils
                 auto iface_file = find_interface_file(ifp.iface_type, search_dirs);
                 if (iface_file.empty())
                 {
-                    std::cerr << "Warning: could not locate interface '" << ifp.iface_type << "' (port '" << ifp.port_name << "') under any search dir - leaving its members empty, wire it by hand.\n";
+                    std::cerr << "Warning: could not locate interface '" << ifp.iface_type << "' (port '" << ifp.port_name << "') under any search dir — leaving its members empty, wire it by hand.\n";
                 }
                 else if (ifp.modport.empty())
                 {
-                    std::cerr << "Warning: port '" << ifp.port_name << "' of interface '" << ifp.iface_type << "' has no modport - cannot determine per-signal direction, leaving members empty.\n";
+                    std::cerr << "Warning: port '" << ifp.port_name << "' of interface '" << ifp.iface_type << "' has no modport — cannot determine per-signal direction, leaving members empty.\n";
                 }
                 else
                 {

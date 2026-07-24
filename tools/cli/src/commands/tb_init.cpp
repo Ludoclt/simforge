@@ -28,6 +28,22 @@ namespace
         return s;
     }
 
+    std::string build_param_mirrors(const SvModule &mod)
+    {
+        if (mod.params.empty())
+            return "// (no module parameters found)";
+
+        std::ostringstream oss;
+        for (const auto &p : mod.params)
+        {
+            if (p.resolved)
+                oss << "constexpr int " << p.name << " = " << p.value << ";\n";
+            else
+                oss << "// " << p.name << " = " << p.raw_default << "  (not resolved automatically, set by hand if needed)\n";
+        }
+        return oss.str();
+    }
+
     std::string build_enum_mirrors(const SvModule &mod)
     {
         std::vector<std::pair<std::string, std::vector<std::string>>> seen; // preserves discovery order
@@ -378,6 +394,7 @@ namespace
             {"VIF_OUTPUT_FIELDS", build_vif_output_fields(io_outputs)},
             {"VIF_CTOR_INIT", build_vif_ctor_init(io_ports, "DUT")},
             {"ENUM_MIRRORS", build_enum_mirrors(mod)},
+            {"PARAM_MIRRORS", build_param_mirrors(mod)},
         };
 
         auto emit = [&](std::string_view tmpl, const std::filesystem::path &rel)
@@ -522,8 +539,20 @@ namespace
             {
                 auto scan = scan_module_text(opts.sv_file, tb_name, {proj_root}, pkg_dirs, {proj_root}, {"--sv"});
                 mod.iface_ports = scan.iface_ports;
+                mod.params = scan.params;
                 if (!json_ok)
                     mod.ports = scan.plain_ports;
+
+                if (!mod.params.empty())
+                {
+                    std::cout << "  Found " << mod.params.size() << " parameter(s): ";
+                    for (size_t i = 0; i < mod.params.size(); ++i)
+                    {
+                        const auto &p = mod.params[i];
+                        std::cout << (i ? ", " : "") << p.name << "=" << (p.resolved ? std::to_string(p.value) : "?");
+                    }
+                    std::cout << "\n";
+                }
             }
             catch (const std::exception &e)
             {

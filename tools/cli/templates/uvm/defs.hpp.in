@@ -27,5 +27,8 @@ using {{MODULE_PASCAL}}Runner = sfuvm::Runner<sfbv::VerilatorBackend<{{DUT_CLASS
 // Enums mirrored from SystemVerilog package types found on this module's ports/interfaces.
 {{ENUM_MIRRORS}}
 
+// Parameters resolved from the module's own #(...) list - use instead of hardcoding widths.
+{{PARAM_MIRRORS}}
+
 // Verilator trace depth (0 = off)
 inline const int TRACE_LEVEL = {{TRACE_LEVEL}};

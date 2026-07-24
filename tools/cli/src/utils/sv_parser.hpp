@@ -51,11 +51,20 @@ namespace simforge::cli::utils
         std::vector<SvIfaceMember> members;
     };
 
+    struct SvParam
+    {
+        std::string name;
+        std::string raw_default;
+        long value = 0;
+        bool resolved = false;
+    };
+
     struct SvModule
     {
         std::string name;
         std::vector<SvPort> ports;
         std::vector<SvIfacePort> iface_ports;
+        std::vector<SvParam> params;
         std::string json_path;
 
         std::vector<SvPort> inputs() const;
@@ -88,6 +97,7 @@ namespace simforge::cli::utils
     {
         std::vector<SvPort> plain_ports;
         std::vector<SvIfacePort> iface_ports;
+        std::vector<SvParam> params;
     };
 
     SvTextScanResult scan_module_text(
