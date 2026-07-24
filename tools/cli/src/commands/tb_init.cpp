@@ -28,6 +28,48 @@ namespace
         return s;
     }
 
+    std::string build_enum_mirrors(const SvModule &mod)
+    {
+        std::vector<std::pair<std::string, std::vector<std::string>>> seen; // preserves discovery order
+        auto consider = [&](const std::string &raw_type, const std::vector<std::string> &values)
+        {
+            if (values.empty())
+                return;
+            std::istringstream iss(raw_type);
+            std::string type_name;
+            iss >> type_name;
+            for (const auto &s : seen)
+                if (s.first == type_name)
+                    return; // already emitted
+            seen.emplace_back(type_name, values);
+        };
+
+        for (const auto &p : mod.ports)
+            consider(p.raw_type, p.enum_values);
+        for (const auto &ip : mod.iface_ports)
+            for (const auto &m : ip.members)
+                consider(m.raw_type, m.enum_values);
+
+        if (seen.empty())
+            return "// (no package enums found on this module's ports)";
+
+        std::ostringstream oss;
+        for (const auto &[type_name, values] : seen)
+        {
+            oss << "enum class " << type_name << " : uint32_t {\n";
+            for (size_t i = 0; i < values.size(); ++i)
+                oss << "    " << values[i] << (i + 1 < values.size() ? "," : "") << "\n";
+            oss << "};\n\n";
+
+            oss << "inline const char *to_string(" << type_name << " v)\n{\n"
+                << "    switch (v)\n    {\n";
+            for (const auto &v : values)
+                oss << "    case " << type_name << "::" << v << ": return \"" << v << "\";\n";
+            oss << "    default: return \"?\";\n    }\n}\n\n";
+        }
+        return oss.str();
+    }
+
     std::string to_pascal(const std::string &s)
     {
         std::string out;
@@ -335,6 +377,7 @@ namespace
             {"VIF_INPUT_FIELDS", build_vif_input_fields(io_inputs)},
             {"VIF_OUTPUT_FIELDS", build_vif_output_fields(io_outputs)},
             {"VIF_CTOR_INIT", build_vif_ctor_init(io_ports, "DUT")},
+            {"ENUM_MIRRORS", build_enum_mirrors(mod)},
         };
 
         auto emit = [&](std::string_view tmpl, const std::filesystem::path &rel)
@@ -487,6 +530,8 @@ namespace
                 std::cerr << "Warning: interface-port text scan failed: " << e.what() << "\n"
                           << "         Generating placeholder VIF. Edit manually.\n";
             }
+
+            annotate_enum_values(mod, pkg_dirs);
         }
 
         // Generate files

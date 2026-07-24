@@ -21,6 +21,7 @@ namespace simforge::cli::utils
         int width = 1;
         bool is_packed = false;
         std::string raw_type;
+        std::vector<std::string> enum_values;
 
         bool is_input() const { return dir == PortDir::Input; }
         bool is_output() const { return dir == PortDir::Output; }
@@ -34,6 +35,7 @@ namespace simforge::cli::utils
         PortDir dir = PortDir::Unknown;
         int width = 1;
         std::string raw_type;
+        std::vector<std::string> enum_values;
 
         bool is_header_port = false;
 
@@ -62,6 +64,16 @@ namespace simforge::cli::utils
         std::string guess_clk_signal() const;
         std::string guess_rst_signal() const;
     };
+
+    struct EnumInfo
+    {
+        std::string type_name;
+        std::vector<std::string> values;
+    };
+
+    std::vector<EnumInfo> parse_package_enums(const std::vector<std::filesystem::path> &pkg_dirs);
+
+    void annotate_enum_values(SvModule &mod, const std::vector<std::filesystem::path> &pkg_dirs);
 
     SvModule parse_sv_module(
         const std::filesystem::path &sv_file,

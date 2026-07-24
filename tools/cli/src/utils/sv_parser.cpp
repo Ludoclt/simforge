@@ -432,7 +432,109 @@ namespace simforge::cli::utils
 
             return members;
         }
+
+        std::string extract_braces(const std::string &text, size_t from, size_t *end_pos = nullptr)
+        {
+            size_t open = text.find('{', from);
+            if (open == std::string::npos)
+                return {};
+            int depth = 0;
+            size_t i = open;
+            for (; i < text.size(); ++i)
+            {
+                if (text[i] == '{')
+                    ++depth;
+                else if (text[i] == '}')
+                {
+                    --depth;
+                    if (depth == 0)
+                        break;
+                }
+            }
+            if (depth != 0)
+                return {};
+            if (end_pos)
+                *end_pos = i;
+            return text.substr(open + 1, i - open - 1);
+        }
     } // anonymous namespace
+
+    std::vector<EnumInfo> parse_package_enums(const std::vector<std::filesystem::path> &pkg_dirs)
+    {
+        std::vector<EnumInfo> out;
+        std::regex enum_re(R"(\btypedef\s+enum\b)");
+
+        for (const auto &dir : pkg_dirs)
+        {
+            if (!std::filesystem::exists(dir))
+                continue;
+
+            for (const auto &entry : std::filesystem::directory_iterator(dir))
+            {
+                if (!entry.is_regular_file() || entry.path().extension() != ".sv")
+                    continue;
+
+                std::string body = read_file(entry.path());
+
+                for (auto it = std::sregex_iterator(body.begin(), body.end(), enum_re); it != std::sregex_iterator(); ++it)
+                {
+                    size_t after_kw = static_cast<size_t>(it->position(0)) + it->length(0);
+                    size_t brace_end = 0;
+                    std::string list_body = extract_braces(body, after_kw, &brace_end);
+                    if (list_body.empty())
+                        continue;
+
+                    size_t semi = body.find(';', brace_end);
+                    if (semi == std::string::npos)
+                        continue;
+
+                    std::string type_name = trim(body.substr(brace_end + 1, semi - brace_end - 1));
+                    if (type_name.empty() || type_name.find_first_of(" \t\n") != std::string::npos)
+                        continue; // not a simple "} name;" tail, skip rather than guess
+
+                    EnumInfo info;
+                    info.type_name = type_name;
+                    for (const auto &item : split_top_level(list_body))
+                    {
+                        auto eq = item.find('=');
+                        std::string name = trim(eq == std::string::npos ? item : item.substr(0, eq));
+                        if (!name.empty())
+                            info.values.push_back(name);
+                    }
+                    if (!info.values.empty())
+                        out.push_back(std::move(info));
+                }
+            }
+        }
+        return out;
+    }
+
+    void annotate_enum_values(SvModule &mod, const std::vector<std::filesystem::path> &pkg_dirs)
+    {
+        auto enums = parse_package_enums(pkg_dirs);
+        if (enums.empty())
+            return;
+
+        auto find_values = [&](const std::string &raw_type) -> const std::vector<std::string> *
+        {
+            std::istringstream iss(raw_type);
+            std::string first_tok;
+            iss >> first_tok;
+            for (const auto &e : enums)
+                if (e.type_name == first_tok)
+                    return &e.values;
+            return nullptr;
+        };
+
+        for (auto &p : mod.ports)
+            if (const auto *vals = find_values(p.raw_type))
+                p.enum_values = *vals;
+
+        for (auto &ip : mod.iface_ports)
+            for (auto &m : ip.members)
+                if (const auto *vals = find_values(m.raw_type))
+                    m.enum_values = *vals;
+    }
 
     SvTextScanResult scan_module_text(
         const std::filesystem::path &sv_file,
