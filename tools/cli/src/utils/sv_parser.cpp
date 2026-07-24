@@ -532,7 +532,7 @@ namespace simforge::cli::utils
         {
             try
             {
-                const std::string probe_top = "__sf_wprobe_" + type_name + "__";
+                const std::string probe_top = "sf_wprobe_" + type_name + "_probe";
                 auto work_dir = std::filesystem::temp_directory_path() / ("simforge_wprobe_" + type_name);
                 std::filesystem::create_directories(work_dir);
 
@@ -907,7 +907,7 @@ namespace simforge::cli::utils
         std::filesystem::create_directories(work_dir);
 
         // Build verilator args
-        std::vector<std::string> args = {"--json-only", "--top-module", top_module};
+        std::vector<std::string> args = {"--json-only", "--top-module", top_module, "--Mdir", work_dir.string()};
 
         std::vector<std::filesystem::path> pkg_files;
 
@@ -949,7 +949,14 @@ namespace simforge::cli::utils
 
         if (!std::filesystem::exists(json_path))
         {
-            throw std::runtime_error("Could not find JSON output from verilator in " + work_dir.string());
+            std::string found;
+            if (std::filesystem::exists(work_dir))
+                for (const auto &e : std::filesystem::directory_iterator(work_dir))
+                    found += "\n  - " + e.path().filename().string();
+            throw std::runtime_error(
+                "Could not find JSON output from verilator at " + json_path.string() +
+                (found.empty() ? "\n(and " + work_dir.string() + " is empty)" : "\nFiles actually present in " + work_dir.string() + ":" + found)
+            );
         }
 
         return parse_json(json_path, top_module);
