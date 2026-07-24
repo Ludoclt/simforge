@@ -39,7 +39,9 @@ RUN git clone --depth=1 --branch $VERILATOR_VERSION \
 # --- Non-root user matching the host UID/GID ---
 ARG USER_UID=1000
 ARG USER_GID=1000
-RUN groupadd --gid "$USER_GID" dev \
+RUN (getent passwd "$USER_UID" | cut -d: -f1 | xargs -r userdel -r) 2>/dev/null || true \
+    && (getent group "$USER_GID" | cut -d: -f1 | xargs -r groupdel) 2>/dev/null || true \
+    && groupadd --gid "$USER_GID" dev \
     && useradd --uid "$USER_UID" --gid "$USER_GID" --create-home --shell /bin/bash dev \
     && apt-get update && apt-get install -y sudo \
     && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
