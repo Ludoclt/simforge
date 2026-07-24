@@ -761,6 +761,112 @@ namespace simforge::cli::utils
                     m.enum_values = *vals;
     }
 
+    std::vector<StructFieldInfo> parse_struct_fields(const std::string &brace_body)
+    {
+        std::vector<StructFieldInfo> fields;
+        static const std::regex field_re(R"(^(\w+)\s*(\[\s*\d+\s*:\s*\d+\s*\])?\s*(.+)$)");
+        static const std::regex range_re(R"(\[\s*(\d+)\s*:\s*(\d+)\s*\])");
+
+        for (const auto &decl : split_top_level(brace_body, ';'))
+        {
+            std::string d = trim(decl);
+            if (d.empty())
+                continue;
+
+            std::smatch m;
+            if (!std::regex_match(d, m, field_re))
+                continue;
+
+            std::string type_tok = m[1].str();
+            std::string range = m[2].str();
+            std::string names_csv = trim(m[3].str());
+
+            int width = 1;
+            std::smatch rm;
+            if (!range.empty() && std::regex_search(range, rm, range_re))
+                width = std::abs(std::stoi(rm[1].str()) - std::stoi(rm[2].str())) + 1;
+
+            for (const auto &raw_name : split_top_level(names_csv, ','))
+            {
+                std::string n = trim(raw_name);
+                if (!n.empty())
+                    fields.push_back({n, width, type_tok});
+            }
+        }
+        return fields;
+    }
+
+    std::vector<StructInfo> parse_package_structs(const std::vector<std::filesystem::path> &pkg_dirs)
+    {
+        std::vector<StructInfo> out;
+        std::regex struct_re(R"(\btypedef\s+struct\s+(?:packed\s+)?)");
+
+        for (const auto &dir : pkg_dirs)
+        {
+            if (!std::filesystem::exists(dir))
+                continue;
+
+            for (const auto &entry : std::filesystem::directory_iterator(dir))
+            {
+                if (!entry.is_regular_file() || entry.path().extension() != ".sv")
+                    continue;
+
+                std::string body = read_file(entry.path());
+
+                for (auto it = std::sregex_iterator(body.begin(), body.end(), struct_re); it != std::sregex_iterator(); ++it)
+                {
+                    size_t after_kw = static_cast<size_t>(it->position(0)) + it->length(0);
+                    size_t brace_end = 0;
+                    std::string brace_body = extract_braces(body, after_kw, &brace_end);
+                    if (brace_body.empty())
+                        continue;
+
+                    size_t semi = body.find(';', brace_end);
+                    if (semi == std::string::npos)
+                        continue;
+
+                    std::string type_name = trim(body.substr(brace_end + 1, semi - brace_end - 1));
+                    if (type_name.empty() || type_name.find_first_of(" \t\n") != std::string::npos)
+                        continue; // skip rather than guess
+
+                    StructInfo info;
+                    info.type_name = type_name;
+                    info.fields = parse_struct_fields(brace_body);
+                    if (!info.fields.empty())
+                        out.push_back(std::move(info));
+                }
+            }
+        }
+        return out;
+    }
+
+    void annotate_struct_fields(SvModule &mod, const std::vector<std::filesystem::path> &pkg_dirs)
+    {
+        auto structs = parse_package_structs(pkg_dirs);
+        if (structs.empty())
+            return;
+
+        auto find_fields = [&](const std::string &raw_type) -> const std::vector<StructFieldInfo> *
+        {
+            std::istringstream iss(raw_type);
+            std::string first_tok;
+            iss >> first_tok;
+            for (const auto &s : structs)
+                if (s.type_name == first_tok)
+                    return &s.fields;
+            return nullptr;
+        };
+
+        for (auto &p : mod.ports)
+            if (const auto *fields = find_fields(p.raw_type))
+                p.struct_fields = *fields;
+
+        for (auto &ip : mod.iface_ports)
+            for (auto &m : ip.members)
+                if (const auto *fields = find_fields(m.raw_type))
+                    m.struct_fields = *fields;
+    }
+
     SvTextScanResult scan_module_text(
         const std::filesystem::path &sv_file,
         const std::string &top_module,

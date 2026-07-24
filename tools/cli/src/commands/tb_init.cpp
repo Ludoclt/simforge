@@ -86,6 +86,186 @@ namespace
         return oss.str();
     }
 
+    std::string bare_type_name(const std::string &raw_type)
+    {
+        std::istringstream iss(raw_type);
+        std::string tok;
+        iss >> tok;
+        return tok;
+    }
+
+    std::string cpp_uint_type(int width)
+    {
+        if (width <= 8)
+            return "vluint8_t";
+        if (width <= 16)
+            return "vluint16_t";
+        if (width <= 32)
+            return "vluint32_t";
+        return "vluint64_t";
+    }
+
+    std::string build_struct_mirrors(const SvModule &mod)
+    {
+        std::vector<std::pair<std::string, std::vector<StructFieldInfo>>> seen; // preserves discovery order
+        auto consider = [&](const std::string &raw_type, const std::vector<StructFieldInfo> &fields)
+        {
+            if (fields.empty())
+                return;
+            std::string type_name = bare_type_name(raw_type);
+            for (const auto &s : seen)
+                if (s.first == type_name)
+                    return; // already emitted
+            seen.emplace_back(type_name, fields);
+        };
+
+        for (const auto &p : mod.ports)
+            consider(p.raw_type, p.struct_fields);
+        for (const auto &ip : mod.iface_ports)
+            for (const auto &m : ip.members)
+                consider(m.raw_type, m.struct_fields);
+
+        if (seen.empty())
+            return "// (no package structs found on this module's ports)";
+
+        std::ostringstream oss;
+        for (const auto &[type_name, fields] : seen)
+        {
+            oss << "struct " << type_name << " {\n";
+            for (const auto &f : fields)
+                oss << "    " << cpp_uint_type(f.width) << " " << f.name << " = 0;\n";
+            oss << "\n    bool operator==(const " << type_name << " &o) const\n    {\n        return ";
+            for (size_t i = 0; i < fields.size(); ++i)
+                oss << (i ? " && " : "") << fields[i].name << " == o." << fields[i].name;
+            oss << ";\n    }\n";
+            oss << "    bool operator!=(const " << type_name << " &o) const { return !(*this == o); }\n";
+            oss << "};\n\n";
+        }
+        return oss.str();
+    }
+
+    // fmt::formatter specializations for every mirrored enum and struct
+    std::string build_fmt_formatters(const SvModule &mod)
+    {
+        std::vector<std::string> enum_types;
+        std::vector<std::pair<std::string, std::vector<StructFieldInfo>>> struct_types;
+
+        auto consider_enum = [&](const std::string &raw_type, const std::vector<std::string> &values)
+        {
+            if (values.empty())
+                return;
+            std::string type_name = bare_type_name(raw_type);
+            if (std::find(enum_types.begin(), enum_types.end(), type_name) == enum_types.end())
+                enum_types.push_back(type_name);
+        };
+        auto consider_struct = [&](const std::string &raw_type, const std::vector<StructFieldInfo> &fields)
+        {
+            if (fields.empty())
+                return;
+            std::string type_name = bare_type_name(raw_type);
+            for (const auto &s : struct_types)
+                if (s.first == type_name)
+                    return;
+            struct_types.emplace_back(type_name, fields);
+        };
+
+        for (const auto &p : mod.ports)
+        {
+            consider_enum(p.raw_type, p.enum_values);
+            consider_struct(p.raw_type, p.struct_fields);
+        }
+        for (const auto &ip : mod.iface_ports)
+            for (const auto &m : ip.members)
+            {
+                consider_enum(m.raw_type, m.enum_values);
+                consider_struct(m.raw_type, m.struct_fields);
+            }
+
+        if (enum_types.empty() && struct_types.empty())
+            return "// (nothing to format — no package enums/structs on this module's ports)";
+
+        std::ostringstream oss;
+        for (const auto &type_name : enum_types)
+        {
+            oss << "template <>\nstruct fmt::formatter<" << type_name << "> {\n"
+                << "    constexpr auto parse(fmt::format_parse_context &ctx) { return ctx.begin(); }\n"
+                << "    template <typename FormatContext>\n"
+                << "    auto format(const " << type_name << " &v, FormatContext &ctx) const\n"
+                << "    {\n        return fmt::format_to(ctx.out(), \"{}\", to_string(v));\n    }\n};\n\n";
+        }
+        for (const auto &[type_name, fields] : struct_types)
+        {
+            oss << "template <>\nstruct fmt::formatter<" << type_name << "> {\n"
+                << "    constexpr auto parse(fmt::format_parse_context &ctx) { return ctx.begin(); }\n"
+                << "    template <typename FormatContext>\n"
+                << "    auto format(const " << type_name << " &v, FormatContext &ctx) const\n"
+                << "    {\n        return fmt::format_to(ctx.out(), \"" << type_name << "{{";
+            for (size_t i = 0; i < fields.size(); ++i)
+                oss << (i ? ", " : "") << fields[i].name << "={}";
+            oss << "}}\"";
+            for (const auto &f : fields)
+                oss << ", v." << f.name;
+            oss << ");\n    }\n};\n\n";
+        }
+        return oss.str();
+    }
+
+    std::string build_data_struct_body(const std::vector<SvPort> &fields, const std::string &struct_name)
+    {
+        std::ostringstream oss;
+        for (const auto &f : fields)
+        {
+            std::string type;
+            std::string default_val = "0";
+            if (!f.enum_values.empty())
+            {
+                type = bare_type_name(f.raw_type);
+                default_val = type + "::" + f.enum_values.front();
+            }
+            else if (!f.struct_fields.empty())
+            {
+                type = bare_type_name(f.raw_type);
+                default_val = "{}";
+            }
+            else
+            {
+                type = f.cpp_type();
+            }
+            oss << "    " << type << " " << f.name << " = " << default_val << ";\n";
+        }
+
+        if (fields.empty())
+            oss << "    // (no ports found to mirror here — see warnings above)\n";
+
+        oss << "\n    " << struct_name << "() = default;\n\n";
+
+        oss << "    bool operator==(const " << struct_name << " &o) const\n    {\n        return ";
+        if (fields.empty())
+            oss << "true";
+        for (size_t i = 0; i < fields.size(); ++i)
+            oss << (i ? " &&\n               " : "") << fields[i].name << " == o." << fields[i].name;
+        oss << ";\n    }\n";
+        oss << "    bool operator!=(const " << struct_name << " &o) const { return !(*this == o); }\n";
+        return oss.str();
+    }
+
+    std::string build_data_fmt_formatter(const std::string &type_name, const std::vector<SvPort> &fields)
+    {
+        std::ostringstream oss;
+        oss << "template <>\nstruct fmt::formatter<" << type_name << "> {\n"
+            << "    constexpr auto parse(fmt::format_parse_context &ctx) { return ctx.begin(); }\n"
+            << "    template <typename FormatContext>\n"
+            << "    auto format(const " << type_name << " &v, FormatContext &ctx) const\n"
+            << "    {\n        return fmt::format_to(ctx.out(), \"" << type_name << "{{";
+        for (size_t i = 0; i < fields.size(); ++i)
+            oss << (i ? ", " : "") << fields[i].name << "={}";
+        oss << "}}\"";
+        for (const auto &f : fields)
+            oss << ", v." << f.name;
+        oss << ");\n    }\n};\n";
+        return oss.str();
+    }
+
     std::string to_pascal(const std::string &s)
     {
         std::string out;
@@ -408,6 +588,12 @@ namespace
             {"VIF_CTOR_INIT", build_vif_ctor_init(io_ports, "DUT")},
             {"ENUM_MIRRORS", build_enum_mirrors(mod)},
             {"PARAM_MIRRORS", build_param_mirrors(mod)},
+            {"STRUCT_MIRRORS", build_struct_mirrors(mod)},
+            {"FMT_FORMATTERS", build_fmt_formatters(mod)},
+            {"INDATA_BODY", build_data_struct_body(io_inputs, MP + "InData")},
+            {"OUTDATA_BODY", build_data_struct_body(io_outputs, MP + "OutData")},
+            {"INDATA_FMT", build_data_fmt_formatter(MP + "InData", io_inputs)},
+            {"OUTDATA_FMT", build_data_fmt_formatter(MP + "OutData", io_outputs)},
         };
 
         auto emit = [&](std::string_view tmpl, const std::filesystem::path &rel)
@@ -576,6 +762,7 @@ namespace
             }
 
             annotate_enum_values(mod, pkg_dirs);
+            annotate_struct_fields(mod, pkg_dirs);
         }
 
         // Generate files

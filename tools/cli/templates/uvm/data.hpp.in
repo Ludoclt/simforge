@@ -8,29 +8,21 @@
 //  InputData  - stimulus driven by the sequencer to the driver.
 //  OutputData - observations captured by the output monitor.
 //
-//  TODO: adapt fields to match your DUT's interface.
+//  Fields below are auto-generated 1:1 from the DUT's own ports (excluding clk/rst) --
+//  this does NOT decide transaction semantics (when a field is valid, which fields
+//  correlate, timing). Add/remove/group fields as your protocol actually needs.
 // #############################################################################
 
 struct {{MODULE_PASCAL}}InData : public sfuvm::InputData
 {
-    // TODO: replace with real input fields
-    uint8_t data_in = 0;
-
-    {{MODULE_PASCAL}}InData() = default;
-    explicit {{MODULE_PASCAL}}InData(uint8_t data) : data_in(data) {}
-
-    bool operator==(const {{MODULE_PASCAL}}InData &o) const { return data_in == o.data_in; }
-    bool operator!=(const {{MODULE_PASCAL}}InData &o) const { return !(*this == o); }
+{{INDATA_BODY}}
 };
 
 struct {{MODULE_PASCAL}}OutData : public sfuvm::OutputData
 {
-    // TODO: replace with real output fields
-    uint8_t data_out = 0;
-
-    {{MODULE_PASCAL}}OutData() = default;
-    explicit {{MODULE_PASCAL}}OutData(uint8_t data) : data_out(data) {}
-
-    bool operator==(const {{MODULE_PASCAL}}OutData &o) const { return data_out == o.data_out; }
-    bool operator!=(const {{MODULE_PASCAL}}OutData &o) const { return !(*this == o); }
+{{OUTDATA_BODY}}
 };
+
+{{INDATA_FMT}}
+
+{{OUTDATA_FMT}}

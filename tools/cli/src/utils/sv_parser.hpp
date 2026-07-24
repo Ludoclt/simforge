@@ -14,6 +14,13 @@ namespace simforge::cli::utils
         Unknown
     };
 
+    struct StructFieldInfo
+    {
+        std::string name;
+        int width = 1;
+        std::string raw_type;
+    };
+
     struct SvPort
     {
         std::string name;
@@ -22,6 +29,7 @@ namespace simforge::cli::utils
         bool is_packed = false;
         std::string raw_type;
         std::vector<std::string> enum_values;
+        std::vector<StructFieldInfo> struct_fields;
 
         bool is_input() const { return dir == PortDir::Input; }
         bool is_output() const { return dir == PortDir::Output; }
@@ -36,6 +44,7 @@ namespace simforge::cli::utils
         int width = 1;
         std::string raw_type;
         std::vector<std::string> enum_values;
+        std::vector<StructFieldInfo> struct_fields;
 
         bool is_header_port = false;
 
@@ -83,6 +92,16 @@ namespace simforge::cli::utils
     std::vector<EnumInfo> parse_package_enums(const std::vector<std::filesystem::path> &pkg_dirs);
 
     void annotate_enum_values(SvModule &mod, const std::vector<std::filesystem::path> &pkg_dirs);
+
+    struct StructInfo
+    {
+        std::string type_name;
+        std::vector<StructFieldInfo> fields;
+    };
+
+    std::vector<StructInfo> parse_package_structs(const std::vector<std::filesystem::path> &pkg_dirs);
+
+    void annotate_struct_fields(SvModule &mod, const std::vector<std::filesystem::path> &pkg_dirs);
 
     SvModule parse_sv_module(
         const std::filesystem::path &sv_file,

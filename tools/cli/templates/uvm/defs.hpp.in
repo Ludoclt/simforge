@@ -2,6 +2,7 @@
 
 #include <simforge/uvm.hpp>
 #include <simforge/backend/verilator/verilator_backend.hpp>
+#include <spdlog/fmt/fmt.h>
 
 #include "{{DUT_CLASS}}.h"
 
@@ -26,6 +27,12 @@ using {{MODULE_PASCAL}}Runner = sfuvm::Runner<sfbv::VerilatorBackend<{{DUT_CLASS
 
 // Enums mirrored from SystemVerilog package types found on this module's ports/interfaces.
 {{ENUM_MIRRORS}}
+
+// Structs mirrored from SystemVerilog package types found on this module's ports/interfaces.
+{{STRUCT_MIRRORS}}
+
+// fmt::formatter specializations for the enums/structs above, so they can be logged directly.
+{{FMT_FORMATTERS}}
 
 // Parameters resolved from the module's own #(...) list - use instead of hardcoding widths.
 {{PARAM_MIRRORS}}
