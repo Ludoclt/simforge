@@ -33,7 +33,7 @@ namespace simforge::cli::utils
           << "cmake_minimum_required(VERSION 3.22)\n\n"
           << "set(MODULE_NAME " << tb.name << ")\n"
           << "set(TOP_MODULE  " << tb.top << ")\n\n"
-          << "project(${MODULE_NAME}_tb LANGUAGES CXX)\n\n"
+          << "project(${MODULE_NAME}_tb LANGUAGES CXX C)\n\n"
           << "set(CMAKE_CXX_STANDARD 20)\n"
           << "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n\n"
           << "add_subdirectory(\"" << (project_root / "libs/simforge").string() << "\" simforge)\n\n"
