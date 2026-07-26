@@ -56,16 +56,43 @@ namespace simforge::cli::utils
 
         // C++ sources
         f << "# == C++ sources =================================================\n"
-          << "file(GLOB_RECURSE TB_SOURCES \"" << abs_tb << "/*.cpp\")\n\n"
-          << "message(STATUS \"TB_SOURCES = ${TB_SOURCES}\")\n\n";
+          << "file(GLOB_RECURSE TB_SOURCES \"" << abs_tb << "/*.cpp\")\n\n";
+
+        // extra_sources
+        if (!tb.extra_sources.empty())
+        {
+            f << "list(APPEND TB_SOURCES\n";
+            for (const auto &s : tb.extra_sources)
+            {
+                std::filesystem::path p(s);
+                f << "    \"" << (p.is_absolute() ? p : project_root / p).string() << "\"\n";
+            }
+            f << ")\n\n";
+        }
+
+        f << "message(STATUS \"TB_SOURCES = ${TB_SOURCES}\")\n\n";
 
         // Executable
         f << "# == Testbench binary =============================================\n"
-          << "add_executable(${MODULE_NAME}_tb ${TB_SOURCES})\n"
-          << "target_link_libraries(${MODULE_NAME}_tb PRIVATE\n"
+          << "add_executable(${MODULE_NAME}_tb ${TB_SOURCES})\n";
+
+        if (!tb.extra_include_dirs.empty())
+        {
+            f << "target_include_directories(${MODULE_NAME}_tb PRIVATE\n";
+            for (const auto &d : tb.extra_include_dirs)
+            {
+                std::filesystem::path p(d);
+                f << "    \"" << (p.is_absolute() ? p : project_root / p).string() << "\"\n";
+            }
+            f << ")\n";
+        }
+
+        f << "target_link_libraries(${MODULE_NAME}_tb PRIVATE\n"
           << "    simforge::uvm\n"
-          << "    simforge::backend::verilator\n"
-          << ")\n\n";
+          << "    simforge::backend::verilator\n";
+        for (const auto &lib : tb.link_libraries)
+            f << "    " << lib << "\n";
+        f << ")\n\n";
 
         // verilate() call
         f << "# == Verilate =====================================================\n";

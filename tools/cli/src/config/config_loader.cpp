@@ -143,6 +143,10 @@ namespace simforge::cli
                 if (const auto *s = t->get_as<std::string>("cpp"))
                     tb.cpp = **s;
 
+                tb.extra_sources = to_string_vec(t->get_as<toml::array>("extra_sources"));
+                tb.extra_include_dirs = to_string_vec(t->get_as<toml::array>("extra_include_dirs"));
+                tb.link_libraries = to_string_vec(t->get_as<toml::array>("link_libraries"));
+
                 tb.verilator = parse_verilator(t->get_as<toml::table>("verilator"));
 
                 cfg.testbenches.push_back(std::move(tb));
@@ -226,6 +230,24 @@ namespace simforge::cli
             f << "sv_top = \"" << tb.sv_top << "\"\n";
         if (!tb.cpp.empty())
             f << "cpp    = \"" << tb.cpp << "\"\n";
+
+        auto write_arr = [&f](const char *key, const std::vector<std::string> &v)
+        {
+            if (v.empty())
+                return;
+            f << key << " = [";
+            for (size_t i = 0; i < v.size(); ++i)
+            {
+                if (i)
+                    f << ", ";
+                f << "\"" << v[i] << "\"";
+            }
+            f << "]\n";
+        };
+
+        write_arr("extra_sources", tb.extra_sources);
+        write_arr("extra_include_dirs", tb.extra_include_dirs);
+        write_arr("link_libraries", tb.link_libraries);
 
         if (tb.verilator.trace_level != 0 || !tb.verilator.args.empty() || !tb.verilator.include_dirs.empty())
         {

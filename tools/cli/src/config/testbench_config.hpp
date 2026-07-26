@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace simforge::cli
 {
@@ -23,6 +24,12 @@ namespace simforge::cli
         // if empty, infers from [paths] + name
         std::string sv_top;
         std::string cpp;
+
+        std::vector<std::string> extra_sources;
+
+        std::vector<std::string> extra_include_dirs;
+
+        std::vector<std::string> link_libraries;
 
         // Verilator overrides for this specific TB
         VerilatorConfig verilator;

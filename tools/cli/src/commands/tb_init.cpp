@@ -512,6 +512,9 @@ namespace
         bool no_parse = false; // skip verilator JSON parsing (offline mode)
         bool force = false;
         int trace_level = 3;
+        std::vector<std::string> extra_sources;
+        std::vector<std::string> extra_include_dirs;
+        std::vector<std::string> link_libraries;
     };
 
     bool dir_has_files(const std::filesystem::path &dir)
@@ -780,6 +783,9 @@ namespace
             tb_cfg.top = tb_name + (opts.wrapper ? "_dut" : "");
             tb_cfg.style = (opts.style == "basic") ? TbStyle::Basic : TbStyle::UVM;
             tb_cfg.verilator.trace_level = opts.trace_level;
+            tb_cfg.extra_sources = opts.extra_sources;
+            tb_cfg.extra_include_dirs = opts.extra_include_dirs;
+            tb_cfg.link_libraries = opts.link_libraries;
 
             simforge::cli::ConfigLoader::upsert_testbench(tb_cfg, proj_root, opts.force);
             std::cout << "\nOK: Registered '" << subdir << "' in simforge.toml\n";
@@ -818,6 +824,16 @@ void register_tb_commands(CLI::App &app)
     tb_init->add_flag("--no-parse", opts->no_parse, "Skip verilator port parsing (useful offline)");
 
     tb_init->add_flag("--force", opts->force, "Overwrite an already-registered testbench / existing generated files");
+
+    tb_init->add_option(
+        "--extra-source",
+        opts->extra_sources,
+        "Extra C/C++ source file to compile into this TB (repeatable), e.g. a vendored reference "
+        "model living outside this testbench's own directory - resolved relative to the project "
+        "root unless absolute. Can also be edited by hand later under 'extra_sources' in simforge.toml."
+    );
+    tb_init->add_option("--extra-include-dir", opts->extra_include_dirs, "Extra -I include dir for the C++ compile (repeatable)");
+    tb_init->add_option("--link-library", opts->link_libraries, "Extra link target/flag for this TB (repeatable)");
 
     tb_init->callback([opts]() { run(*opts); });
 }
