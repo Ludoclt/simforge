@@ -26,7 +26,7 @@ public:
         logger()->info("### Scoreboard Report ###############################");
         logger()->info("Errors: {}", errors_.size());
         for (auto &[in, exp, got, t] : errors_)
-            logger()->error("  t={} | in={} | expected={} | got={}", t, in, exp, got);
+            logger()->error("  t={} | in={} | expected={} | got={}", t, *in, *exp, *got);
         logger()->info("#####################################################");
 
         if (!errors_.empty())
