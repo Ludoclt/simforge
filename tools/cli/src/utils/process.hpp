@@ -19,6 +19,10 @@ namespace simforge::cli::utils
 
     int run_interactive(const std::string &cmd, const std::vector<std::string> &args, const std::filesystem::path &cwd = std::filesystem::current_path());
 
+    pid_t run_detached(const std::string &cmd, const std::vector<std::string> &args, const std::filesystem::path &cwd = std::filesystem::current_path(), const std::filesystem::path &log_file = {});
+
+    bool pid_alive(pid_t pid);
+
     std::string which(const std::string &name);
 
 } // namespace simforge::cli::utils

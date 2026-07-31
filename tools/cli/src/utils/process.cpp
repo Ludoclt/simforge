@@ -1,11 +1,14 @@
 #include "process.hpp"
 
 #include <array>
+#include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <sstream>
 #include <stdexcept>
 
 // POSIX
+#include <fcntl.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -138,5 +141,89 @@ namespace simforge::cli::utils
         int status;
         waitpid(pid, &status, 0);
         return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    }
+
+    bool pid_alive(pid_t pid)
+    {
+        if (pid <= 0)
+            return false;
+        if (kill(pid, 0) == 0)
+            return true;
+        return errno == EPERM;
+    }
+
+    pid_t run_detached(const std::string &cmd, const std::vector<std::string> &args, const std::filesystem::path &cwd, const std::filesystem::path &log_file)
+    {
+        std::vector<const char *> argv;
+        argv.push_back(cmd.c_str());
+        for (const auto &a : args)
+            argv.push_back(a.c_str());
+        argv.push_back(nullptr);
+
+        std::string resolved = which(cmd);
+        const char *exe = resolved.empty() ? cmd.c_str() : resolved.c_str();
+
+        int pfd[2];
+        if (pipe(pfd) != 0)
+            throw std::runtime_error("Failed to create pipe for detached process");
+
+        pid_t intermediate = fork();
+        if (intermediate < 0)
+        {
+            close(pfd[0]);
+            close(pfd[1]);
+            throw std::runtime_error("fork() failed");
+        }
+
+        if (intermediate == 0)
+        {
+            close(pfd[0]);
+            setsid();
+
+            pid_t grandchild = fork();
+            if (grandchild < 0)
+                _exit(127);
+
+            if (grandchild > 0)
+            {
+                ssize_t ignored = write(pfd[1], &grandchild, sizeof(grandchild));
+                (void)ignored;
+                close(pfd[1]);
+                _exit(0);
+            }
+
+            close(pfd[1]);
+
+            if (chdir(cwd.c_str()) != 0)
+                _exit(127);
+
+            int devnull = open("/dev/null", O_RDONLY);
+            if (devnull >= 0)
+            {
+                dup2(devnull, STDIN_FILENO);
+                close(devnull);
+            }
+
+            int out = log_file.empty() ? open("/dev/null", O_WRONLY) : open(log_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (out >= 0)
+            {
+                dup2(out, STDOUT_FILENO);
+                dup2(out, STDERR_FILENO);
+                close(out);
+            }
+
+            execvp(exe, const_cast<char *const *>(argv.data()));
+            _exit(127);
+        }
+
+        close(pfd[1]);
+        pid_t launched = -1;
+        ssize_t got = read(pfd[0], &launched, sizeof(launched));
+        close(pfd[0]);
+
+        int status;
+        waitpid(intermediate, &status, 0); // reap the intermediate
+
+        return got == sizeof(launched) ? launched : -1;
     }
 } // namespace simforge::cli::utils
